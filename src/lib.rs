@@ -32,7 +32,7 @@ pub trait ARuntime {
     /**
     Spawns a future onto the runtime.
 */
-    fn spawn_detached<F: Future + Send,R>(&self, priority: priority::Priority, runtime_hint: RuntimeHint, f: F);
+    fn spawn_detached<F: Future + Send>(&self, priority: priority::Priority, runtime_hint: RuntimeHint, f: F);
 }
 
 #[cfg(test)] mod tests {
