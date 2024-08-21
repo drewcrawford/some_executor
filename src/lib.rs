@@ -31,8 +31,12 @@ use std::future::Future;
 pub trait ARuntime {
     /**
     Spawns a future onto the runtime.
+
+    # Note
+
+    `Send` and `'static` are generally required to move the future onto a new thread.
 */
-    fn spawn_detached<F: Future + Send>(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: F);
+    fn spawn_detached<F: Future + Send + 'static>(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: F);
 }
 
 #[cfg(test)] mod tests {
