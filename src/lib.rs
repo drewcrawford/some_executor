@@ -52,6 +52,15 @@ pub trait ARuntime: Send + Clone {
     fn spawn_detached<F: Future + Send + 'static>(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: F);
 }
 
+pub trait ARuntimeExt: ARuntime {
+    /**they say we can't have async closures, but what about closures that produce a future?
+*/
+    fn spawn_detached_closure<F: FnOnce() -> Fut,Fut: Future + Send + 'static>(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: F) {
+        self.spawn_detached(priority, runtime_hint, f());
+    }
+}
+
+impl<Runtime: ARuntime> ARuntimeExt for Runtime {}
 #[cfg(test)] mod tests {
 
 }
