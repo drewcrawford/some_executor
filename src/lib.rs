@@ -28,7 +28,20 @@ pub enum RuntimeHint {
 
 use std::future::Future;
 
-pub trait ARuntime {
+/*
+Design notes.
+Send is required because we often want to take this trait object and port it to another thread, etc.
+Clone is required so that we can get copies for sending.
+PartialEq could be used to compare runtimes, but I can't imagine anyone needs it
+PartialOrd, Ord what does it mean?
+Hash might make sense if we support eq but again, I can't imagine anyone needs it.
+Debug might be nice but I dunno if it's needed.
+I think all the rest are nonsense.
+
+
+I think we don't want Sync, we want Send/Clone semantics, and if the runtime can optimize it, it can.
+*/
+pub trait ARuntime: Send + Clone {
     /**
     Spawns a future onto the runtime.
 
