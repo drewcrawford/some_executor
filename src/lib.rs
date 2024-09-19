@@ -55,8 +55,9 @@ pub trait ARuntime: Send + Clone + ARuntimeObjSafe {
 
 pub trait ARuntimeObjSafe: Send + Sync + Debug {
     fn spawn_detached_objsafe(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: Box<dyn Future<Output=()> + Send + 'static>);
-
 }
+
+
 
 
 pub trait ARuntimeExt: ARuntime {
