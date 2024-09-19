@@ -26,6 +26,7 @@ pub enum RuntimeHint {
     CPU,
 }
 
+use std::fmt::Debug;
 use std::future::Future;
 use std::sync::OnceLock;
 /*
@@ -52,7 +53,7 @@ pub trait ARuntime: Send + Clone + ARuntimeObjSafe {
     fn spawn_detached<F: Future + Send + 'static>(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: F);
 }
 
-pub trait ARuntimeObjSafe: Send + Sync {
+pub trait ARuntimeObjSafe: Send + Sync + Debug {
 
 }
 
@@ -84,7 +85,7 @@ Sets the global runtime to this value.
 Values that reference the global_runtime after this will see the new value.
 */
 pub fn set_global_runtime(runtime: Box<dyn ARuntimeObjSafe>) {
-    GLOBAL_RUNTIME.set(runtime).unwrap();
+    GLOBAL_RUNTIME.set(runtime).expect("didn't set global runtime");
 }
 
 
