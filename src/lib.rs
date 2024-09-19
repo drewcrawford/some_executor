@@ -42,7 +42,7 @@ I think all the rest are nonsense.
 
 I think we don't want Sync, we want Send/Clone semantics, and if the runtime can optimize it, it can.
 */
-pub trait ARuntime: Send + Clone + ARuntimeObjSafe {
+pub trait ARuntime: Send + Clone {
     /**
     Spawns a future onto the runtime.
 
@@ -51,12 +51,34 @@ pub trait ARuntime: Send + Clone + ARuntimeObjSafe {
     `Send` and `'static` are generally required to move the future onto a new thread.
     */
     fn spawn_detached<F: Future + Send + 'static>(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: F);
+
+    /**
+    Return an object-safe version of the runtime.
+
+    This may be the same object, or it may be a wrapper that implements the objsafe API.
+*/
+    fn to_objsafe_runtime(self) -> Box<dyn ARuntimeObjSafe>;
 }
 
+//sync is needed so that multiple threads can access e.g. a global shared reference.
 pub trait ARuntimeObjSafe: Send + Sync + Debug {
-    fn spawn_detached_objsafe(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: Box<dyn Future<Output=()> + Send + 'static>);
+    /**
+    Spawns a future onto the runtime.
+
+# Note
+    This differs from [spawn_detached] in a few ways:
+    1.  Takes a boxed future, since we can't have generic properties on an objsafe wrapper.  Implementations probably pin this with [Box::into_pin].
+    2.  Takes an immutable reference.  Callers can't really clone Box<dyn Trait> to get a unique copy as this requires Size.  Implementors may wish to go with that or some other strategy (like an internal mutex, channel, etc.)
+        We don't really want to specify "how it works", merely that this is a pattern clients want to do...
+*/
+    fn spawn_detached_objsafe(&self, priority: priority::Priority, runtime_hint: RuntimeHint, f: Box<dyn Future<Output=()> + Send + 'static>);
 }
 
+impl<A: ARuntime> From<A> for Box<dyn ARuntimeObjSafe> {
+    fn from(runtime: A) -> Self {
+        runtime.to_objsafe_runtime()
+    }
+}
 
 
 
@@ -95,7 +117,4 @@ pub fn set_global_runtime(runtime: Box<dyn ARuntimeObjSafe>) {
 #[cfg(test)] mod tests {
     use crate::ARuntimeObjSafe;
 
-    #[test] fn obj_safe() {
-        fn assert_obj_safe<T>(_foo: &dyn ARuntimeObjSafe) {}
-    }
 }
