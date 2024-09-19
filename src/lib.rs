@@ -54,8 +54,10 @@ pub trait ARuntime: Send + Clone + ARuntimeObjSafe {
 }
 
 pub trait ARuntimeObjSafe: Send + Sync + Debug {
+    fn spawn_detached_objsafe(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: Box<dyn Future<Output=()> + Send + 'static>);
 
 }
+
 
 pub trait ARuntimeExt: ARuntime {
     /**they say we can't have async closures, but what about closures that produce a future?
@@ -90,5 +92,9 @@ pub fn set_global_runtime(runtime: Box<dyn ARuntimeObjSafe>) {
 
 
 #[cfg(test)] mod tests {
+    use crate::ARuntimeObjSafe;
 
+    #[test] fn obj_safe() {
+        fn assert_obj_safe<T>(_foo: &dyn ARuntimeObjSafe) {}
+    }
 }
