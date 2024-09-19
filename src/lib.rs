@@ -27,7 +27,7 @@ pub enum RuntimeHint {
 }
 
 use std::future::Future;
-
+use std::sync::OnceLock;
 /*
 Design notes.
 Send is required because we often want to take this trait object and port it to another thread, etc.
@@ -41,15 +41,19 @@ I think all the rest are nonsense.
 
 I think we don't want Sync, we want Send/Clone semantics, and if the runtime can optimize it, it can.
 */
-pub trait ARuntime: Send + Clone {
+pub trait ARuntime: Send + Clone + ARuntimeObjSafe {
     /**
     Spawns a future onto the runtime.
 
     # Note
 
     `Send` and `'static` are generally required to move the future onto a new thread.
-*/
+    */
     fn spawn_detached<F: Future + Send + 'static>(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: F);
+}
+
+pub trait ARuntimeObjSafe: Send + Sync {
+
 }
 
 pub trait ARuntimeExt: ARuntime {
@@ -61,6 +65,29 @@ pub trait ARuntimeExt: ARuntime {
 }
 
 impl<Runtime: ARuntime> ARuntimeExt for Runtime {}
+
+static GLOBAL_RUNTIME: OnceLock<Box<dyn ARuntimeObjSafe>> = OnceLock::new();
+
+/**
+Accesses a runtime that is available for the global / arbitrary lifetime.
+
+# Preconditions
+
+The runtime must have been initialized with `set_global_runtime`.
+*/
+pub fn global_runtime() -> &'static dyn ARuntimeObjSafe {
+    GLOBAL_RUNTIME.get().expect("Global runtime not initialized").as_ref()
+}
+
+/**
+Sets the global runtime to this value.
+Values that reference the global_runtime after this will see the new value.
+*/
+pub fn set_global_runtime(runtime: Box<dyn ARuntimeObjSafe>) {
+    GLOBAL_RUNTIME.set(runtime).unwrap();
+}
+
+
 #[cfg(test)] mod tests {
 
 }
