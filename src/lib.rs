@@ -49,6 +49,9 @@ pub trait ARuntime: Send + Clone {
     # Note
 
     `Send` and `'static` are generally required to move the future onto a new thread.
+
+    # Implementation notes
+    Implementations should generally ensure that a dlog-context is available to the future.
     */
     fn spawn_detached<F: Future + Send + 'static>(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: F);
 
@@ -70,6 +73,9 @@ pub trait ARuntimeObjSafe: Send + Sync + Debug {
     1.  Takes a boxed future, since we can't have generic properties on an objsafe wrapper.  Implementations probably pin this with [Box::into_pin].
     2.  Takes an immutable reference.  Callers can't really clone Box<dyn Trait> to get a unique copy as this requires Size.  Implementors may wish to go with that or some other strategy (like an internal mutex, channel, etc.)
         We don't really want to specify "how it works", merely that this is a pattern clients want to do...
+
+# Implementation notes
+    Implementations should generally ensure that a dlog-context is available to the future.
 */
     fn spawn_detached_objsafe(&self, priority: priority::Priority, runtime_hint: RuntimeHint, f: Box<dyn Future<Output=()> + Send + 'static>);
 }
@@ -115,6 +121,5 @@ pub fn set_global_runtime(runtime: Box<dyn ARuntimeObjSafe>) {
 
 
 #[cfg(test)] mod tests {
-    use crate::ARuntimeObjSafe;
 
 }
