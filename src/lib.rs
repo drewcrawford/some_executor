@@ -62,6 +62,11 @@ pub trait ARuntime: Send + Clone {
     fn spawn_detached<F: Future + Send + 'static>(&mut self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, f: F);
 
     /**
+    Like [spawn_detached], but some implementors may have a fast path for the async context.
+*/
+    fn spawn_detached_async<F: Future + Send + 'static>(&mut self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, f: F) -> impl Future<Output=()>;
+
+    /**
     Spawns a future onto the runtime after a certain time.
 
     Conforming runtimes guarantee that the future is spawned 'not before' `time`  That is, a caller can expect `assert!(Instant::now() >= time)` when the future is spawned.
@@ -78,6 +83,11 @@ pub trait ARuntime: Send + Clone {
 
 */
     fn spawn_after(&mut self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, time: std::time::Instant, f: impl FnOnce() + Send + 'static);
+
+    /**
+    Like [spawn_after], but some implementors may have a fast path for the async context.
+*/
+    fn spawn_after_async(&mut self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, time: std::time::Instant, f: impl FnOnce() + Send + 'static) -> impl Future<Output=()>;
 
     /**
     Return an object-safe version of the runtime.
@@ -102,6 +112,8 @@ pub trait ARuntimeObjSafe: Send + Sync + Debug {
     Implementations should generally ensure that a dlog-context is available to the future.
 */
     fn spawn_detached_objsafe(&self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, f: Box<dyn Future<Output=()> + Send + 'static>);
+
+
 }
 
 impl<A: ARuntime> From<A> for Box<dyn ARuntimeObjSafe> {
