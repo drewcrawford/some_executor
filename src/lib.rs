@@ -46,6 +46,12 @@ pub trait ARuntime: Send + Clone {
     /**
     Spawns a future onto the runtime.
 
+    # Parameters
+    - `label`: A label for the future.  This is useful for debugging.
+    - `priority`: The priority of the future.  This is useful for scheduling.
+    - `runtime_hint`: A hint about the runtime characteristics of the future.  This is useful for scheduling.
+    - `f`: The future to spawn.
+
     # Note
 
     `Send` and `'static` are generally required to move the future onto a new thread.
@@ -53,7 +59,25 @@ pub trait ARuntime: Send + Clone {
     # Implementation notes
     Implementations should generally ensure that a dlog-context is available to the future.
     */
-    fn spawn_detached<F: Future + Send + 'static>(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: F);
+    fn spawn_detached<F: Future + Send + 'static>(&mut self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, f: F);
+
+    /**
+    Spawns a future onto the runtime after a certain time.
+
+    Conforming runtimes guarantee that the future is spawned 'not before' `time`  That is, a caller can expect `assert!(Instant::now() >= time)` when the future is spawned.
+
+    However, runtimes are not required to spawn the future exactly at `time`, and it may be later under load.  Runtimes are expected to use reasonable best efforts to spawn the future close to `time`,
+    but "reasonable" is in the eye of the implementor and subject to the constraints of the runtime.
+
+    # Parameters
+    - `label`: A label for the future.  This is useful for debugging.
+    - `priority`: The priority of the future.  This is useful for scheduling.
+    - `runtime_hint`: A hint about the runtime characteristics of the future.  This is useful for scheduling.
+    - `time`: The time to spawn the future.
+    - `f`: The future to spawn.
+
+*/
+    fn spawn_after(&mut self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, time: std::time::Instant, f: impl FnOnce() + Send + 'static);
 
     /**
     Return an object-safe version of the runtime.
@@ -77,7 +101,7 @@ pub trait ARuntimeObjSafe: Send + Sync + Debug {
 # Implementation notes
     Implementations should generally ensure that a dlog-context is available to the future.
 */
-    fn spawn_detached_objsafe(&self, priority: priority::Priority, runtime_hint: RuntimeHint, f: Box<dyn Future<Output=()> + Send + 'static>);
+    fn spawn_detached_objsafe(&self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, f: Box<dyn Future<Output=()> + Send + 'static>);
 }
 
 impl<A: ARuntime> From<A> for Box<dyn ARuntimeObjSafe> {
@@ -91,8 +115,8 @@ impl<A: ARuntime> From<A> for Box<dyn ARuntimeObjSafe> {
 pub trait ARuntimeExt: ARuntime {
     /**they say we can't have async closures, but what about closures that produce a future?
 */
-    fn spawn_detached_closure<F: FnOnce() -> Fut,Fut: Future + Send + 'static>(&mut self, priority: priority::Priority, runtime_hint: RuntimeHint, f: F) {
-        self.spawn_detached(priority, runtime_hint, f());
+    fn spawn_detached_closure<F: FnOnce() -> Fut,Fut: Future + Send + 'static>(&mut self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, f: F) {
+        self.spawn_detached(label, priority, runtime_hint, f());
     }
 }
 
