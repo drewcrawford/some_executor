@@ -82,12 +82,12 @@ pub trait ARuntime: Send + Clone {
     - `f`: The future to spawn.
 
 */
-    fn spawn_after(&mut self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, time: std::time::Instant, f: impl FnOnce() + Send + 'static);
+    fn spawn_after<F: Future + Send + 'static>(&mut self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, time: std::time::Instant, f: F);
 
     /**
     Like [spawn_after], but some implementors may have a fast path for the async context.
 */
-    fn spawn_after_async(&mut self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, time: std::time::Instant, f: impl FnOnce() + Send + 'static) -> impl Future<Output=()>;
+    fn spawn_after_async<F: Future + Send + 'static>(&mut self, label: &'static str, priority: priority::Priority, runtime_hint: RuntimeHint, time: std::time::Instant, f: F) -> impl Future<Output=()>;
 
     /**
     Return an object-safe version of the runtime.
