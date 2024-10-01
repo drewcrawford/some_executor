@@ -42,7 +42,7 @@ I think all the rest are nonsense.
 
 I think we don't want Sync, we want Send/Clone semantics, and if the runtime can optimize it, it can.
 */
-pub trait ARuntime: Send + Clone {
+pub trait ARuntime: Send + Clone + 'static {
     /**
     Spawns a future onto the runtime.
 
