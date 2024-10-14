@@ -19,3 +19,7 @@ The crate implements both a trait suitable for generic code with zero-cost abstr
 dynamic dispatch.
 
 This crate also defines a 'global' executor, suitable for 'get' by library code and 'set' by application code.
+
+# Development status
+
+This interface is unstable and may change.
