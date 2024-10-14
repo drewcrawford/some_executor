@@ -1,4 +1,4 @@
-some_executor https://sealedabstract.com/code/some_exector
+some_executor https://sealedabstract.com/code/some_executor
 A trait for libraries that abstract over any executor.
 Copyright 2024 Drew Crawford.
 
