@@ -13,7 +13,7 @@ but that is suspiciously large and somehow depends on tokio, which motivates the
 which somehow still has 50 lines of features for tokio, smol, async-io, sleep, time, etc.
 
 Anyway, this crate's one and *only* job is to define an obvious and minimal API trait (façade) that libraries can consume to
-spawn their task on *some* async executor.  Implementing that API for any given executor is trivial, however to keep the
+spawn their task on 'some' async executor.  Implementing that API for any given executor is trivial, however to keep the
 crate small this exercise is left to that executor, a third-party crate consuming both APIs, or to the reader.
 
 The crate implements both a trait suitable for generic code with zero-cost abstraction, and an object-safe trait suitable for
