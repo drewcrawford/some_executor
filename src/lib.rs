@@ -30,12 +30,14 @@ mod task;
 mod global_runtime;
 mod hint;
 mod context;
+mod observer;
 
 pub type Priority = priority::Priority;
 
-
+use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
+use crate::observer::Observer;
 use crate::task::Task;
 /*
 Design notes.
@@ -70,7 +72,7 @@ pub trait SomeExecutor: Send + 'static + Sync {
     # Implementation notes
     Implementations should generally ensure that a dlog-context is available to the future.
     */
-    fn spawn<F: Future + Send + 'static>(&mut self, task: Task<F>) where Self: Sized;
+    fn spawn<F: Future + Send + 'static>(&mut self, task: Task<F>) -> Observer<F::Output> where Self: Sized;
 
 
     /**
@@ -78,7 +80,7 @@ pub trait SomeExecutor: Send + 'static + Sync {
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
 */
-    async fn spawn_async<F: Future + Send + 'static>(&mut self, task: Task<F>) where Self: Sized;
+    async fn spawn_async<F: Future + Send + 'static>(&mut self, task: Task<F>) -> Observer<F::Output> where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
@@ -87,7 +89,7 @@ pub trait SomeExecutor: Send + 'static + Sync {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=()> + 'static + Send> >>);
+    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>> + 'static + Send> >>) -> Observer<Box<dyn Any>>;
 
     /**
     Clones the executor.
@@ -117,14 +119,14 @@ pub trait LocalExecutor: SomeExecutor {
     - `task`: The task to spawn.
 
     */
-    fn spawn_local<F: Future>(&mut self, task: Task<F>) where Self: Sized;
+    fn spawn_local<F: Future>(&mut self, task: Task<F>) -> Observer<F::Output> where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
     */
-    async fn spawn_local_async<F: Future>(&mut self, task: Task<F>) where Self: Sized;
+    async fn spawn_local_async<F: Future>(&mut self, task: Task<F>)  -> Observer<F::Output> where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
@@ -133,7 +135,7 @@ pub trait LocalExecutor: SomeExecutor {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=()>>>>);
+    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>>) -> Observer<Box<dyn Any>>;
 }
 
 /**

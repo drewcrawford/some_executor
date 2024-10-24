@@ -23,6 +23,7 @@ pub fn set_global_runtime(runtime: Box<dyn SomeExecutor>) {
 }
 
 #[cfg(test)] mod tests {
+    use std::any::Any;
     use crate::global_runtime::global_runtime;
     use crate::task::{ConfigurationBuilder, Task};
 
@@ -30,7 +31,12 @@ pub fn set_global_runtime(runtime: Box<dyn SomeExecutor>) {
         fn dont_execute_just_compile() {
             let mut runtime = global_runtime().clone_box();
             let configuration = ConfigurationBuilder::new().build();
-            let task = Task::new_objsafe("test".into(), Box::new(async {}), configuration);
+            //get a Box<dyn Any>
+
+            let task = Task::new_objsafe("test".into(), Box::new(async {
+                Box::new(()) as Box<dyn Any>
+                // todo!()
+            }), configuration);
             runtime.spawn_objsafe(task);
         }
     }

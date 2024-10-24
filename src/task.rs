@@ -1,9 +1,11 @@
+use std::any::Any;
 use std::future::Future;
 use std::ops::Sub;
 use std::pin::Pin;
 use priority::Priority;
 use crate::context::TaskLocalFuture;
 use crate::hint::Hint;
+use crate::observer::{observer_channel, Observer, ObserverSender};
 use crate::task_local;
 
 /**
@@ -11,10 +13,12 @@ A top-level future.
 
 The Task contains information that can be useful to an executor when deciding how to run the future.
 */
-pub struct Task<F> {
+pub struct Task<F> where F: Future {
     future: TaskLocalFuture<Priority, TaskLocalFuture<String, F>>,
     hint: Hint,
     poll_after: std::time::Instant,
+    observer_sender: ObserverSender<F::Output>,
+    observer: Option<Observer<F::Output>>
 }
 
 task_local! {
@@ -22,14 +26,17 @@ task_local! {
     pub static TASK_PRIORITY: priority::Priority;
 }
 
-impl<F> Task<F> {
+impl<F: Future> Task<F> {
     pub fn new(label: String, future: F, configuration: Configuration) -> Self where F: Future {
         let apply_label = TASK_LABEL.scope(label, future);
         let apply = TASK_PRIORITY.scope(configuration.priority, apply_label);
+        let (observer_sender, observer) = observer_channel();
         Task {
             future: apply,
             hint: configuration.hint,
             poll_after: configuration.poll_after,
+            observer_sender,
+            observer: Some(observer)
         }
     }
 
@@ -48,6 +55,15 @@ impl<F> Task<F> {
 
     pub fn poll_after(&self) -> std::time::Instant {
         self.poll_after
+    }
+
+    /**
+    Detaches an observer from the task.
+
+    This operation can only be called once.
+    */
+    pub fn detach_observer(&mut self) -> Observer<F::Output> where F: Future {
+        self.observer.take().expect("Observer already detached")
     }
 }
 
@@ -69,8 +85,8 @@ impl<F> Future for Task<F> where F: Future {
     }
 }
 
-impl Task<Pin<Box<dyn Future<Output=()> + Send + 'static>>> {
-    pub fn new_objsafe(label: String, future: Box<dyn Future<Output=()> + Send + 'static>, configuration: Configuration) -> Self {
+impl Task<Pin<Box<dyn Future<Output=Box<dyn Any>> + Send + 'static>>> {
+    pub fn new_objsafe(label: String, future: Box<dyn Future<Output=Box<dyn Any>> + Send + 'static>, configuration: Configuration) -> Self {
         Self::new(label, Box::into_pin(future), configuration)
     }
 }
