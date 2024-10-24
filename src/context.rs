@@ -40,6 +40,7 @@ macro_rules! __task_local_inner {
     };
 }
 
+#[derive(Debug)]
 pub struct LocalKey<T: 'static>(pub /* do not use */ std::thread::LocalKey<RefCell<Option<T>>>);
 
 /// A future that sets a value `T` of a task local for the future `F` during
@@ -49,6 +50,7 @@ pub struct LocalKey<T: 'static>(pub /* do not use */ std::thread::LocalKey<RefCe
 /// completion of the future.
 ///
 /// Created by the function [`LocalKey::scope`](self::LocalKey::scope).
+#[derive(Debug)]
 pub(crate) struct TaskLocalFuture<V: 'static,F> {
     slot: Option<V>,
     local_key: &'static LocalKey<V>,
@@ -84,9 +86,13 @@ impl<V,F> TaskLocalFuture<V,F> {
         &self.future
     }
 
-    // pub fn get_future_mut(&mut self) -> &mut F {
-    //     &mut self.future
-    // }
+    pub (crate) fn get_future_mut(&mut self) -> &mut F {
+        &mut self.future
+    }
+
+    pub(crate) fn into_future(self) -> F {
+        self.future
+    }
 }
 impl<V,F> Future for TaskLocalFuture<V,F> where V: Unpin, F: Future {
     type Output = F::Output;

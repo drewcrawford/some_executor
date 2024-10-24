@@ -40,6 +40,8 @@ A top-level future.
 
 The Task contains information that can be useful to an executor when deciding how to run the future.
 */
+#[derive(Debug)]
+#[must_use]
 pub struct Task<F> where F: Future {
     future: TaskLocalFuture<Priority, TaskLocalFuture<String, F>>,
     hint: Hint,
@@ -63,6 +65,13 @@ impl<F: Future, Notifier> SpawnedTask<F,Notifier> {
 */
     pub fn task(&self) -> &Task<F> {
         &self.task
+    }
+
+    /**
+    Access the underlying task.
+*/
+    pub fn task_mut(&mut self) -> &mut Task<F> {
+        &mut self.task
     }
 
 }
@@ -105,6 +114,10 @@ impl<F: Future> Task<F> {
 
     pub fn task_id(&self) -> TaskID {
         self.task_id
+    }
+
+    pub fn into_future(self) -> F {
+        self.future.into_future().into_future()
     }
 
     pub fn spawn<Notifier: ObserverNotifier<F::Output>>(self, notify: Option<Notifier>) -> (SpawnedTask<F,Notifier>, Observer<F::Output>) {
@@ -216,6 +229,7 @@ impl ConfigurationBuilder {
             poll_after: self.poll_after.unwrap_or_else(|| std::time::Instant::now().sub(std::time::Duration::from_secs(1))),
         }
     }
+
 }
 
 impl Configuration {
@@ -250,11 +264,53 @@ That eliminates the need for PartialEq, Eq, Hash.  We have ID type for this.
 I suppose we could implement Default with a blank task...
 
  */
+#[derive(Debug,Copy,Clone,PartialEq,Eq,Hash,Default)]
+pub struct DefaultFuture;
+impl Future for DefaultFuture {
+    type Output = ();
+    fn poll(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        Poll::Ready(())
+    }
+}
+impl Default for Task<DefaultFuture> {
+    fn default() -> Self {
+        Task::new("".to_string(), DefaultFuture, Configuration::default())
+    }
+}
 
+/*
+Support from for the Future type
+ */
 
+impl<F: Future> From<F> for Task<F> {
+    fn from(future: F) -> Self {
+        Task::new("".to_string(), future, Configuration::default())
+    }
+}
+
+/*
+Support AsRef for the underlying future type
+ */
+
+impl<F: Future> AsRef<F> for Task<F> {
+    fn as_ref(&self) -> &F {
+        self.future.get_future().get_future()
+    }
+}
+
+/*
+Support AsMut for the underlying future type
+ */
+impl <F: Future> AsMut<F> for Task<F> {
+    fn as_mut(&mut self) -> &mut F {
+        self.future.get_future_mut().get_future_mut()
+    }
+}
 
 
 #[cfg(test)] mod tests {
+    use std::future::Future;
+    use crate::task::Task;
     use crate::task_local;
     #[test] fn test_send() {
         task_local!(
@@ -265,6 +321,29 @@ I suppose we could implement Default with a blank task...
 
         fn assert_send<T: Send>(_: T) {}
         assert_send(scoped);
+
+
+
+    }
+
+    #[test] fn test_send_task() {
+        #[allow(unused)]
+        fn task_check<F: Future + Send>(task: Task<F>) {
+            fn assert_send<T: Send>(_: T) {}
+            assert_send(task);
+
+
+        }
+        #[allow(unused)]
+        fn task_check_sync<F: Future + Sync>(task: Task<F>) {
+            fn assert_sync<T: Sync>(_: T) {}
+            assert_sync(task);
+        }
+        #[allow(unused)]
+        fn task_check_unpin<F: Future + Unpin>(task: Task<F>) {
+            fn assert_unpin<T: Unpin>(_: T) {}
+            assert_unpin(task);
+        }
 
 
     }
