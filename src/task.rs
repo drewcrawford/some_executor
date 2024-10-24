@@ -14,7 +14,6 @@ The Task contains information that can be useful to an executor when deciding ho
 pub struct Task<F> {
     future: TaskLocalFuture<Priority, TaskLocalFuture<String, F>>,
     hint: Hint,
-    priority: Priority,
     poll_after: std::time::Instant,
 }
 
@@ -30,7 +29,6 @@ impl<F> Task<F> {
         Task {
             future: apply,
             hint: configuration.hint,
-            priority: configuration.priority,
             poll_after: configuration.poll_after,
         }
     }
@@ -40,8 +38,12 @@ impl<F> Task<F> {
         self.hint
     }
 
+    pub fn label(&self) -> String {
+        self.future.get_future().get_val(|label| label.clone())
+    }
+
     pub fn priority(&self) -> priority::Priority {
-        self.priority
+        self.future.get_val(|priority| *priority)
     }
 
     pub fn poll_after(&self) -> std::time::Instant {

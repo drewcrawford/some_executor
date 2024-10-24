@@ -54,6 +54,40 @@ pub(crate) struct TaskLocalFuture<V: 'static,F> {
     local_key: &'static LocalKey<V>,
     future: F,
 }
+
+impl<V,F> TaskLocalFuture<V,F> {
+    /**
+    Gets access to the underlying value.
+*/
+
+    pub fn get_val<R>(&self, closure:impl FnOnce(&V) -> R) -> R  {
+        match self.slot {
+            Some(ref value) => closure(value),
+            None => self.local_key.with(|value| {
+                closure(value.expect("Value neither in slot nor in thread-local"))
+            })
+        }
+    }
+    /**
+    Gets mutable access to the underlying value.
+*/
+    pub fn get_val_mut<R>(&mut self, closure:impl FnOnce(&mut V) -> R) -> R  {
+        match self.slot {
+            Some(ref mut value) => closure(value),
+            None => self.local_key.with_mut(|value| {
+                closure(value.expect("Value neither in slot nor in thread-local"))
+            })
+        }
+    }
+
+    pub fn get_future(&self) -> &F {
+        &self.future
+    }
+
+    pub fn get_future_mut(&mut self) -> &mut F {
+        &mut self.future
+    }
+}
 impl<V,F> Future for TaskLocalFuture<V,F> where V: Unpin, F: Future {
     type Output = F::Output;
 
