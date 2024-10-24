@@ -33,10 +33,10 @@ struct Shared<T> {
 Observes information about a task.
 */
 #[derive(Debug)]
-pub struct Observer<T> {
+pub struct Observer<T,ENotifier> {
     shared: Arc<Shared<T>>,
     task_id: TaskID,
-
+    notifier: Option<ENotifier>,
 }
 
 #[derive(Debug)]
@@ -86,7 +86,7 @@ impl<T,Notifier> Drop for ObserverSender<T,Notifier> {
     }
 }
 
-impl<T> Observer<T> {
+impl<T,E> Observer<T,E> {
     pub fn observe(&self) -> Observation<T> {
         let mut lock = self.shared.lock.lock().unwrap();
         match *lock {
@@ -159,9 +159,9 @@ impl ExecutorNotified for NoNotified {
     }
 }
 
-pub(crate) fn observer_channel<R,ONotifier,ENotifier>(observer_notify: Option<ONotifier>, executor_notify: Option<ENotifier>, task_id: TaskID) -> (ObserverSender<R,ONotifier>, Observer<R>) {
+pub(crate) fn observer_channel<R,ONotifier,ENotifier>(observer_notify: Option<ONotifier>, executor_notify: Option<ENotifier>, task_id: TaskID) -> (ObserverSender<R,ONotifier>, Observer<R,ENotifier>) {
     let shared = Arc::new(Shared { lock: std::sync::Mutex::new(Observation::Pending) });
-    (ObserverSender {shared: shared.clone(), notifier: observer_notify}, Observer {shared, task_id})
+    (ObserverSender {shared: shared.clone(), notifier: observer_notify}, Observer {shared, task_id, notifier: executor_notify})
 }
 
 /*
@@ -177,17 +177,17 @@ Observer - avoid copy/clone, Eq, Hash, default (channel), from/into, asref/asmut
 
         /* observer can send when the underlying value can */
         #[allow(unused)]
-        fn ex<T: Send>(_observer: Observer<T>) {
+        fn ex<T: Send,E: Send>(_observer: Observer<T,E>) {
             fn assert_send<T: Send>() {}
-            assert_send::<Observer<T>>();
+            assert_send::<Observer<T,E>>();
         }
     }
     #[test] fn test_unpin() {
         /* observer can unpin */
         #[allow(unused)]
-        fn ex<T>(_observer: Observer<T>) {
+        fn ex<T,E: Unpin>(_observer: Observer<T,E>) {
             fn assert_unpin<T: Unpin>() {}
-            assert_unpin::<Observer<T>>();
+            assert_unpin::<Observer<T,E>>();
         }
     }
 }
