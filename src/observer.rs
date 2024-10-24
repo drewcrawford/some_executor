@@ -35,7 +35,8 @@ Observes information about a task.
 #[derive(Debug)]
 pub struct Observer<T> {
     shared: Arc<Shared<T>>,
-    task_id: TaskID
+    task_id: TaskID,
+
 }
 
 #[derive(Debug)]

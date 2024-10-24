@@ -37,7 +37,7 @@ pub type Priority = priority::Priority;
 use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
-use crate::observer::{Observer, ObserverNotified};
+use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
 use crate::task::Task;
 /*
 Design notes.
@@ -58,6 +58,7 @@ Code targeting this trait can spawn tasks on an executor without knowing which e
 If possible, use the [SomeExecutorExt] trait instead.  But this trait is useful if you need an objsafe trait.
 */
 pub trait SomeExecutor: Send + 'static + Sync {
+    type ExecutorNotifier;
     /**
     Spawns a future onto the runtime.
 
@@ -96,7 +97,7 @@ pub trait SomeExecutor: Send + 'static + Sync {
 
     The returned value will spawn tasks onto the same executor.
 */
-    fn clone_box(&self) -> Box<dyn SomeExecutor>;
+    fn clone_box(&self) -> Box<dyn SomeExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>;
 }
 
 /**
@@ -139,6 +140,11 @@ pub trait LocalExecutor: SomeExecutor {
 }
 
 /**
+The appropriate type for a dynamically-dispatched executor.
+*/
+pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>;
+
+/**
 A non-objsafe descendant of [LocalExecutor].
 
 This trait provides a more ergonomic interface, but is not object-safe.
@@ -151,10 +157,10 @@ pub trait LocalExecutorExt: LocalExecutor + Clone {
 
 
 #[cfg(test)] mod tests {
-    use crate::SomeExecutor;
+    use crate::{DynExecutor, SomeExecutor};
 
     #[test] fn test_is_objsafe() {
         #[allow(unused)]
-        fn is_objsafe(_obj: &dyn SomeExecutor) {}
+        fn is_objsafe(_obj: &DynExecutor) {}
     }
 }

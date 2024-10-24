@@ -360,9 +360,6 @@ impl<F: Future> AsMut<F> for SpawnedTask<F,NoNotified,NoNotified> {
 
         fn assert_send<T: Send>(_: T) {}
         assert_send(scoped);
-
-
-
     }
 
     #[test] fn test_send_task() {
