@@ -106,6 +106,46 @@ pub trait SomeExecutorExt: SomeExecutor + Clone {
 
 }
 
+/**
+A trait for executors that can spawn tasks onto the local thread.
+*/
+pub trait LocalExecutor: SomeExecutor {
+    /**
+    Spawns a future onto the runtime.
+
+    # Parameters
+    - `task`: The task to spawn.
+
+    */
+    fn spawn_local<F: Future>(&mut self, task: Task<F>) where Self: Sized;
+
+    /**
+    Spawns a future onto the runtime.
+
+    Like [Self::spawn], but some implementors may have a fast path for the async context.
+    */
+    async fn spawn_local_async<F: Future>(&mut self, task: Task<F>) where Self: Sized;
+
+    /**
+    Spawns a future onto the runtime.
+
+    # Note
+
+    This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
+    */
+    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=()>>>>);
+}
+
+/**
+A non-objsafe descendant of [LocalExecutor].
+
+This trait provides a more ergonomic interface, but is not object-safe.
+
+*/
+pub trait LocalExecutorExt: LocalExecutor + Clone {
+
+}
+
 
 
 #[cfg(test)] mod tests {
