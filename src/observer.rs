@@ -162,14 +162,16 @@ Observer - avoid copy/clone, Eq, Hash, default (channel), from/into, asref/asmut
     #[test] fn test_send() {
 
         /* observer can send when the underlying value can */
-        fn ex<T: Send>(observer: Observer<T>) {
+        #[allow(unused)]
+        fn ex<T: Send>(_observer: Observer<T>) {
             fn assert_send<T: Send>() {}
             assert_send::<Observer<T>>();
         }
     }
     #[test] fn test_unpin() {
         /* observer can unpin */
-        fn ex<T>(observer: Observer<T>) {
+        #[allow(unused)]
+        fn ex<T>(_observer: Observer<T>) {
             fn assert_unpin<T: Unpin>() {}
             assert_unpin::<Observer<T>>();
         }
