@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::ops::Sub;
 use std::pin::Pin;
 use std::sync::atomic::AtomicU64;
@@ -7,7 +8,7 @@ use std::task::Poll;
 use priority::Priority;
 use crate::context::TaskLocalFuture;
 use crate::hint::Hint;
-use crate::observer::{observer_channel, NoNotifier, Observer, ObserverNotifier, ObserverSender};
+use crate::observer::{observer_channel, NoNotified, Observer, ObserverNotified, ObserverSender};
 use crate::task_local;
 
 /**
@@ -55,12 +56,13 @@ A task suitable for spawning.
 Executors convert [Task] into this type in order to poll the future.
 */
 #[derive(Debug)]
-pub struct SpawnedTask<F,Notifier> where F: Future {
+pub struct SpawnedTask<F,ONotifier,ENotifier> where F: Future {
     task: Task<F>,
-    sender: ObserverSender<F::Output,Notifier>
+    sender: ObserverSender<F::Output,ONotifier>,
+    phantom: std::marker::PhantomData<ENotifier>
 }
 
-impl<F: Future, Notifier> SpawnedTask<F,Notifier> {
+impl<F: Future, ONotifier,ENotifier> SpawnedTask<F,ONotifier,ENotifier> {
     /**
     Access the underlying task.
 */
@@ -125,11 +127,12 @@ impl<F: Future> Task<F> {
         self.future.into_future().into_future()
     }
 
-    pub fn spawn<Notifier: ObserverNotifier<F::Output>>(self, notify: Option<Notifier>) -> (SpawnedTask<F,Notifier>, Observer<F::Output>) {
-        let (sender, receiver) = observer_channel(notify,self.task_id);
+    pub fn spawn<ONotifier: ObserverNotified<F::Output>,ENotifier>(self, observer_notifier: Option<ONotifier>,executor_notifier: Option<ENotifier>) -> (SpawnedTask<F,ONotifier,ENotifier>, Observer<F::Output>) {
+        let (sender, receiver) = observer_channel(observer_notifier,executor_notifier,self.task_id);
         let spawned_task = SpawnedTask {
             task: self,
-            sender
+            sender,
+            phantom: PhantomData
         };
         (spawned_task, receiver)
     }
@@ -137,7 +140,7 @@ impl<F: Future> Task<F> {
 }
 
 
-impl<F,Notifier> Future for SpawnedTask<F,Notifier> where F: Future, Notifier: ObserverNotifier<F::Output> {
+impl<F,ONotifier,ENotifier> Future for SpawnedTask<F,ONotifier,ENotifier> where F: Future, ONotifier: ObserverNotified<F::Output> {
     type Output = ();
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
@@ -316,26 +319,26 @@ impl <F: Future> AsMut<F> for Task<F> {
 Analogously, for spawned task...
  */
 
-impl Default for SpawnedTask<DefaultFuture,NoNotifier> {
+impl Default for SpawnedTask<DefaultFuture,NoNotified,NoNotified> {
     fn default() -> Self {
-        Task::default().spawn(None).0
+        Task::default().spawn(None,None).0
     }
 }
 
-impl<F: Future> From<F> for SpawnedTask<F,NoNotifier> {
+impl<F: Future> From<F> for SpawnedTask<F,NoNotified,NoNotified> {
     fn from(future: F) -> Self {
-        Task::from(future).spawn(None).0
+        Task::from(future).spawn(None,None).0
     }
 }
 
 
-impl<F: Future> AsRef<F> for SpawnedTask<F,NoNotifier> {
+impl<F: Future> AsRef<F> for SpawnedTask<F,NoNotified,NoNotified> {
     fn as_ref(&self) -> &F {
         self.task().as_ref()
     }
 }
 
-impl<F: Future> AsMut<F> for SpawnedTask<F,NoNotifier> {
+impl<F: Future> AsMut<F> for SpawnedTask<F,NoNotified,NoNotified> {
     fn as_mut(&mut self) -> &mut F {
         self.task_mut().as_mut()
     }
@@ -345,7 +348,7 @@ impl<F: Future> AsMut<F> for SpawnedTask<F,NoNotifier> {
 
 #[cfg(test)] mod tests {
     use std::future::Future;
-    use crate::observer::NoNotifier;
+    use crate::observer::NoNotified;
     use crate::task::{SpawnedTask, Task};
     use crate::task_local;
     #[test] fn test_send() {
@@ -383,21 +386,21 @@ impl<F: Future> AsMut<F> for SpawnedTask<F,NoNotifier> {
 
         #[allow(unused)]
         fn spawn_check<F: Future + Send>(task: Task<F>) where F::Output: Send {
-            let spawned: SpawnedTask<F,NoNotifier> = task.spawn(None).0;
+            let spawned: SpawnedTask<F,NoNotified,NoNotified> = task.spawn(None,None).0;
             fn assert_send<T: Send>(_: T) {}
             assert_send(spawned);
         }
 
         #[allow(unused)]
         fn spawn_check_sync<F: Future + Sync>(task: Task<F>) where F::Output: Send {
-            let spawned: SpawnedTask<F,NoNotifier> = task.spawn(None).0;
+            let spawned: SpawnedTask<F,NoNotified,NoNotified> = task.spawn(None,None).0;
             fn assert_sync<T: Sync>(_: T) {}
             assert_sync(spawned);
         }
 
         #[allow(unused)]
         fn spawn_check_unpin<F: Future + Unpin>(task: Task<F>) {
-            let spawned: SpawnedTask<F,NoNotifier> = task.spawn(None).0;
+            let spawned: SpawnedTask<F,NoNotified,NoNotified> = task.spawn(None,None).0;
             fn assert_unpin<T: Unpin>(_: T) {}
             assert_unpin(spawned);
         }
