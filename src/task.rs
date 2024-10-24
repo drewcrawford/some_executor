@@ -2,12 +2,24 @@ use std::any::Any;
 use std::future::Future;
 use std::ops::Sub;
 use std::pin::Pin;
+use std::sync::atomic::AtomicU64;
 use std::task::Poll;
 use priority::Priority;
 use crate::context::TaskLocalFuture;
 use crate::hint::Hint;
 use crate::observer::{observer_channel, Observer, ObserverNotifier, ObserverSender};
 use crate::task_local;
+
+/**
+A task identifier.
+
+This is a unique identifier for a task.
+*/
+#[derive(Debug,Clone,Copy)]
+pub struct TaskID(u64);
+
+static TASK_ID: AtomicU64 = AtomicU64::new(0);
+
 
 /**
 A top-level future.
@@ -18,6 +30,7 @@ pub struct Task<F> where F: Future {
     future: TaskLocalFuture<Priority, TaskLocalFuture<String, F>>,
     hint: Hint,
     poll_after: std::time::Instant,
+    task_id: TaskID,
 }
 
 /**
@@ -25,9 +38,19 @@ A task suitable for spawning.
 
 Executors convert [Task] into this type in order to poll the future.
 */
-pub struct SpanwedTask<F,Notifier> where F: Future {
+pub struct SpawnedTask<F,Notifier> where F: Future {
     task: Task<F>,
     sender: ObserverSender<F::Output,Notifier>
+}
+
+impl<F: Future, Notifier> SpawnedTask<F,Notifier> {
+    /**
+    Access the underlying task.
+*/
+    pub fn task(&self) -> &Task<F> {
+        &self.task
+    }
+
 }
 
 task_local! {
@@ -39,10 +62,13 @@ impl<F: Future> Task<F> {
     pub fn new(label: String, future: F, configuration: Configuration) -> Self where F: Future {
         let apply_label = TASK_LABEL.scope_internal(label, future);
         let apply = TASK_PRIORITY.scope_internal(configuration.priority, apply_label);
+        let task_id = TaskID(TASK_ID.fetch_add(1,std::sync::atomic::Ordering::Relaxed));
+        assert_ne!(task_id.0, 0, "TaskID overflow");
         Task {
             future: apply,
             hint: configuration.hint,
             poll_after: configuration.poll_after,
+            task_id,
         }
     }
 
@@ -63,9 +89,13 @@ impl<F: Future> Task<F> {
         self.poll_after
     }
 
-    pub fn spawn<Notifier: ObserverNotifier<F::Output>>(self, notify: Option<Notifier>) -> (SpanwedTask<F,Notifier>, Observer<F::Output>) {
+    pub fn task_id(&self) -> TaskID {
+        self.task_id
+    }
+
+    pub fn spawn<Notifier: ObserverNotifier<F::Output>>(self, notify: Option<Notifier>) -> (SpawnedTask<F,Notifier>, Observer<F::Output>) {
         let (sender, receiver) = observer_channel(notify);
-        let spawned_task = SpanwedTask {
+        let spawned_task = SpawnedTask {
             task: self,
             sender
         };
@@ -75,7 +105,7 @@ impl<F: Future> Task<F> {
 }
 
 
-impl<F,Notifier> Future for SpanwedTask<F,Notifier> where F: Future, Notifier: ObserverNotifier<F::Output> {
+impl<F,Notifier> Future for SpawnedTask<F,Notifier> where F: Future, Notifier: ObserverNotifier<F::Output> {
     type Output = ();
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
@@ -119,6 +149,9 @@ pub struct Configuration {
     poll_after: std::time::Instant,
 }
 
+/**
+A builder for [Configuration].
+*/
 pub struct ConfigurationBuilder {
     hint: Option<Hint>,
     priority: Option<priority::Priority>,
@@ -179,6 +212,12 @@ impl Configuration {
         }
     }
 }
+
+/* boilerplates
+I don't think it makes sense to support Clone on Task.
+That eliminates the need for PartialEq, Eq, Hash.
+
+ */
 
 #[cfg(test)] mod tests {
     use crate::task_local;
