@@ -58,7 +58,7 @@ Code targeting this trait can spawn tasks on an executor without knowing which e
 If possible, use the [SomeExecutorExt] trait instead.  But this trait is useful if you need an objsafe trait.
 */
 pub trait SomeExecutor: Send + 'static + Sync {
-    type ExecutorNotifier;
+    type ExecutorNotifier: ExecutorNotified;
     /**
     Spawns a future onto the runtime.
 

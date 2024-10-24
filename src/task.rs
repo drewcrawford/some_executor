@@ -8,7 +8,7 @@ use std::task::Poll;
 use priority::Priority;
 use crate::context::TaskLocalFuture;
 use crate::hint::Hint;
-use crate::observer::{observer_channel, NoNotified, Observer, ObserverNotified, ObserverSender};
+use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
 use crate::task_local;
 
 /**
@@ -127,7 +127,7 @@ impl<F: Future> Task<F> {
         self.future.into_future().into_future()
     }
 
-    pub fn spawn<ONotifier: ObserverNotified<F::Output>,ENotifier>(self, observer_notifier: Option<ONotifier>,executor_notifier: Option<ENotifier>) -> (SpawnedTask<F,ONotifier,ENotifier>, Observer<F::Output,ENotifier>) {
+    pub fn spawn<ONotifier: ObserverNotified<F::Output>,ENotifier: ExecutorNotified>(self, observer_notifier: Option<ONotifier>,executor_notifier: Option<ENotifier>) -> (SpawnedTask<F,ONotifier,ENotifier>, Observer<F::Output,ENotifier>) {
         let (sender, receiver) = observer_channel(observer_notifier,executor_notifier,self.task_id);
         let spawned_task = SpawnedTask {
             task: self,
