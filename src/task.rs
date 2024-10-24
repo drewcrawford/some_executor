@@ -15,8 +15,22 @@ A task identifier.
 
 This is a unique identifier for a task.
 */
-#[derive(Debug,Clone,Copy)]
+#[derive(Debug,Clone,Copy,PartialEq,Eq,Hash)]
 pub struct TaskID(u64);
+
+impl<F> From<&Task<F>> for TaskID {
+    fn from(task: &Task<F>) -> Self {
+        task.task_id
+    }
+}
+
+impl<F> AsRef<TaskID> for Task<F> {
+    fn as_ref(&self) -> &TaskID {
+        &self.task_id
+    }
+}
+
+
 
 static TASK_ID: AtomicU64 = AtomicU64::new(0);
 
