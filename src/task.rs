@@ -18,13 +18,13 @@ This is a unique identifier for a task.
 #[derive(Debug,Clone,Copy,PartialEq,Eq,Hash)]
 pub struct TaskID(u64);
 
-impl<F> From<&Task<F>> for TaskID {
+impl<F: Future> From<&Task<F>> for TaskID {
     fn from(task: &Task<F>) -> Self {
         task.task_id
     }
 }
 
-impl<F> AsRef<TaskID> for Task<F> {
+impl<F: Future> AsRef<TaskID> for Task<F> {
     fn as_ref(&self) -> &TaskID {
         &self.task_id
     }
@@ -157,6 +157,7 @@ impl Task<Pin<Box<dyn Future<Output=Box<dyn Any>> + Send + 'static>>> {
 /**
 Information needed to spawn a task.
 */
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct Configuration {
     hint: Hint,
     priority: priority::Priority,
@@ -228,10 +229,30 @@ impl Configuration {
 }
 
 /* boilerplates
+
+configuration - default
+
+*/
+impl Default for Configuration {
+    fn default() -> Self {
+        Configuration {
+            hint: Hint::default(),
+            priority: priority::Priority::Unknown,
+            poll_after: std::time::Instant::now().sub(std::time::Duration::from_secs(1)),
+        }
+    }
+}
+
+/*
 I don't think it makes sense to support Clone on Task.
-That eliminates the need for PartialEq, Eq, Hash.
+That eliminates the need for PartialEq, Eq, Hash.  We have ID type for this.
+
+I suppose we could implement Default with a blank task...
 
  */
+
+
+
 
 #[cfg(test)] mod tests {
     use crate::task_local;
