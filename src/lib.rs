@@ -33,21 +33,18 @@ mod hint;
 pub type Priority = priority::Priority;
 
 
-use std::fmt::Debug;
 use std::future::Future;
 use crate::task::Task;
 /*
 Design notes.
 Send is required because we often want to take this trait object and port it to another thread, etc.
+Sync is required to have a global executor.
 Clone is required so that we can get copies for sending.
 PartialEq could be used to compare runtimes, but I can't imagine anyone needs it
 PartialOrd, Ord what does it mean?
 Hash might make sense if we support eq but again, I can't imagine anyone needs it.
 Debug
 I think all the rest are nonsense.
-
-
-I think we don't want Sync, we want Send/Clone/mut semantics, and if the runtime can optimize it, it can.
 */
 /**
 A trait targeting 'some' executor.
@@ -78,7 +75,6 @@ pub trait SomeExecutor: Send + 'static + Sync {
     Spawns a future onto the runtime.
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
-
 */
     async fn spawn_async<F: Future + Send + 'static>(&mut self, task: Task<F>) where Self: Sized;
 
@@ -88,14 +84,13 @@ pub trait SomeExecutor: Send + 'static + Sync {
     # Note
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic properties.  Implementations probably pin this with [Box::into_pin].
-
     */
     fn spawn_objsafe(&mut self, task: Task<Box<dyn Future<Output=()> + 'static + Send>>);
 
     /**
     Clones the executor.
 
-    The returned value spawns onto the same executor.
+    The returned value will spawn tasks onto the same executor.
 */
     fn clone_box(&self) -> Box<dyn SomeExecutor>;
 }

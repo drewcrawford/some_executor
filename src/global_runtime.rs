@@ -21,3 +21,15 @@ Values that reference the global_runtime after this will see the new value.
 pub fn set_global_runtime(runtime: Box<dyn SomeExecutor>) {
     GLOBAL_RUNTIME.set(runtime).unwrap_or_else(|_| panic!("Global runtime already initialized"));
 }
+
+#[cfg(test)] mod tests {
+    use crate::global_runtime::global_runtime;
+    use crate::task::{ConfigurationBuilder, Task};
+
+    #[test] fn global_pattern() {
+        fn dont_execute_just_compile() {
+            let mut runtime = global_runtime().clone_box();
+            runtime.spawn_objsafe(Task::new("test", Box::new(async { }), ConfigurationBuilder::new().build()));
+        }
+    }
+}
