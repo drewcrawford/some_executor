@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::ops::Sub;
 use std::pin::Pin;
+use priority::Priority;
 use crate::context::TaskLocalFuture;
 use crate::hint::Hint;
 use crate::task_local;
@@ -11,34 +12,40 @@ A top-level future.
 The Task contains information that can be useful to an executor when deciding how to run the future.
 */
 pub struct Task<F> {
-    future: TaskLocalFuture<String, F>,
-    configuration: Configuration,
+    future: TaskLocalFuture<Priority, TaskLocalFuture<String, F>>,
+    hint: Hint,
+    priority: Priority,
+    poll_after: std::time::Instant,
 }
 
 task_local! {
-    static TASK_LABEL: String;
+    pub static TASK_LABEL: String;
+    pub static TASK_PRIORITY: priority::Priority;
 }
 
 impl<F> Task<F> {
     pub fn new(label: String, future: F, configuration: Configuration) -> Self where F: Future {
         let apply_label = TASK_LABEL.scope(label, future);
+        let apply = TASK_PRIORITY.scope(configuration.priority, apply_label);
         Task {
-            future: apply_label,
-            configuration,
+            future: apply,
+            hint: configuration.hint,
+            priority: configuration.priority,
+            poll_after: configuration.poll_after,
         }
     }
 
 
     pub fn hint(&self) -> Hint {
-        self.configuration.hint
+        self.hint
     }
 
     pub fn priority(&self) -> priority::Priority {
-        self.configuration.priority
+        self.priority
     }
 
     pub fn poll_after(&self) -> std::time::Instant {
-        self.configuration.poll_after
+        self.poll_after
     }
 }
 
@@ -46,12 +53,12 @@ impl<F> Future for Task<F> where F: Future {
     type Output = F::Output;
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        assert!(self.configuration.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
+        assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let (future) = unsafe {
+        let future = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.future);
-            (future)
+            future
         };
 
         future.poll(cx)
@@ -62,11 +69,7 @@ impl<F> Future for Task<F> where F: Future {
 
 impl Task<Pin<Box<dyn Future<Output=()> + Send + 'static>>> {
     pub fn new_objsafe(label: String, future: Box<dyn Future<Output=()> + Send + 'static>, configuration: Configuration) -> Self {
-        let apply_label = TASK_LABEL.scope(label, Box::into_pin(future));
-        Task {
-            future: apply_label,
-            configuration,
-        }
+        Self::new(label, Box::into_pin(future), configuration)
     }
 }
 
@@ -143,7 +146,6 @@ impl Configuration {
 
 #[cfg(test)] mod tests {
     use crate::task_local;
-    use super::TaskLocalFuture;
     #[test] fn test_send() {
         task_local!(
             static FOO: u32;
