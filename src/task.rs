@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::ops::Sub;
 use crate::hint::Hint;
 
 /**
@@ -41,6 +42,7 @@ impl<F> Future for Task<F> where F: Future {
     type Output = F::Output;
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        assert!(self.configuration.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         let f = unsafe { self.map_unchecked_mut(|s| &mut s.future) };
         f.poll(cx)
     }
@@ -101,7 +103,7 @@ impl ConfigurationBuilder {
         Configuration {
             hint: self.hint.unwrap_or_else(|| Hint::default()),
             priority: self.priority.unwrap_or_else(|| priority::Priority::Unknown),
-            poll_after: self.poll_after.unwrap_or_else(|| std::time::Instant::now()),
+            poll_after: self.poll_after.unwrap_or_else(|| std::time::Instant::now().sub(std::time::Duration::from_secs(1))),
         }
     }
 }
