@@ -43,17 +43,22 @@ Clone is required so that we can get copies for sending.
 PartialEq could be used to compare runtimes, but I can't imagine anyone needs it
 PartialOrd, Ord what does it mean?
 Hash might make sense if we support eq but again, I can't imagine anyone needs it.
-Debug might be nice but I dunno if it's needed.
+Debug
 I think all the rest are nonsense.
 
 
 I think we don't want Sync, we want Send/Clone/mut semantics, and if the runtime can optimize it, it can.
 */
-pub trait SomeExecutor: Send + Clone + 'static {
+/**
+A trait targeting 'some' executor.
+
+Code targeting this trait can spawn tasks on an executor without knowing which executor it is.
+
+If possible, use the [SomeExecutorExt] trait instead.  But this trait is useful if you need an objsafe trait.
+*/
+pub trait SomeExecutor: Send + 'static + Sync {
     /**
     Spawns a future onto the runtime.
-
-    This function has few requirements on the underlying Future.
 
     # Parameters
     - `task`: The task to spawn.
@@ -66,7 +71,7 @@ pub trait SomeExecutor: Send + Clone + 'static {
     # Implementation notes
     Implementations should generally ensure that a dlog-context is available to the future.
     */
-    fn spawn<F: Future + Send + 'static>(&mut self, task: Task<F>);
+    fn spawn<F: Future + Send + 'static>(&mut self, task: Task<F>) where Self: Sized;
 
 
     /**
@@ -75,45 +80,41 @@ pub trait SomeExecutor: Send + Clone + 'static {
     Like [Self::spawn], but some implementors may have a fast path for the async context.
 
 */
-    async fn spawn_async<F: Future + Send + 'static>(&mut self, task: Task<F>);
+    async fn spawn_async<F: Future + Send + 'static>(&mut self, task: Task<F>) where Self: Sized;
 
-
-
-
-    /**
-    Return an object-safe version of the runtime.
-
-    This may be the same object, or it may be a wrapper that implements the objsafe API.
-*/
-    fn to_objsafe_runtime(self) -> Box<dyn SomeExecutorObjSafe>;
-}
-
-//sync is needed so that multiple threads can access e.g. a global shared reference.
-pub trait SomeExecutorObjSafe: Send + Sync + Debug {
     /**
     Spawns a future onto the runtime.
 
     # Note
 
-    This differs from [SomeExecutor::spawn_detached] in a few ways:
-    1.  Takes a boxed future, since we can't have generic properties on an objsafe wrapper.  Implementations probably pin this with [Box::into_pin].
-    2.  Takes an immutable reference.  Callers can't really clone `Box<dyn Trait>` to get a unique copy as this requires Size.  Implementors may wish to go with that or some other strategy (like an internal mutex, channel, etc.)
-        We don't really want to specify "how it works", merely that this is a pattern clients want to do...
+    This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic properties.  Implementations probably pin this with [Box::into_pin].
+
+    */
+    fn spawn_objsafe(&mut self, task: Task<Box<dyn Future<Output=()> + 'static + Send>>);
+
+    /**
+    Clones the executor.
+
+    The returned value spawns onto the same executor.
 */
-    fn spawn_objsafe(&self, task: Task<Box<dyn Future<Output=()> + 'static + Send>>);
+    fn clone_box(&self) -> Box<dyn SomeExecutor>;
 }
 
-impl<A: SomeExecutor> From<A> for Box<dyn SomeExecutorObjSafe> {
-    fn from(runtime: A) -> Self {
-        runtime.to_objsafe_runtime()
-    }
+/**
+A non-objsafe descendant of [SomeExecutor].
+
+This trait provides a more ergonomic interface, but is not object-safe.
+*/
+pub trait SomeExecutorExt: SomeExecutor + Clone {
+
 }
+
 
 
 #[cfg(test)] mod tests {
-    use crate::SomeExecutorObjSafe;
+    use crate::SomeExecutor;
 
     #[test] fn test_is_objsafe() {
-        fn is_objsafe(_obj: Box<dyn SomeExecutorObjSafe>) {}
+        fn is_objsafe(_obj: &dyn SomeExecutor) {}
     }
 }
