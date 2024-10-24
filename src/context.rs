@@ -204,6 +204,12 @@ impl<T: 'static> LocalKey<T> {
 
 
 }
+/*
+boilerplates
+LocalKey - underlying doesn't support clone.  This eliminates copy,eq,ord,default,etc.
+from/into does not make a lot of sense, neither does asref/deref
+Looks like send/sync/unpin ought to carry through
+ */
 
 #[cfg(test)] mod tests {
     #[test] fn local() {
