@@ -64,8 +64,8 @@ impl<F> Future for Task<F> where F: Future {
     }
 }
 
-impl Task<Pin<Box<dyn Future<Output=()>>>> {
-    pub fn new_objsafe(label: &'static str, future: Box<dyn Future<Output=()>>, configuration: Configuration) -> Self {
+impl Task<Pin<Box<dyn Future<Output=()> + Send + 'static>>> {
+    pub fn new_objsafe(label: &'static str, future: Box<dyn Future<Output=()> + Send + 'static>, configuration: Configuration) -> Self {
         let apply_label = TASK_LABEL.scope(label, Box::into_pin(future));
         Task {
             label,
