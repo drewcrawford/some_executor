@@ -38,11 +38,12 @@ pub struct Observer<T> {
 
 pub(crate) struct ObserverSender<T,Notifier> {
     shared: Arc<Shared<T>>,
-    notifier: Option<Notifier>
+    pub(crate) notifier: Option<Notifier>
 }
 
 impl<T,Notifier> ObserverSender<T,Notifier> {
-    pub(crate) fn send(&self, value: T) {
+    pub(crate) fn send(&mut self, value: T) where Notifier: ObserverNotifier<T> {
+        self.notifier.as_mut().map(|n| n.notify(&value));
         let mut lock = self.shared.lock.lock().unwrap();
         match *lock {
             Observation::Pending => {
@@ -102,7 +103,29 @@ impl<T> Observer<T> {
     }
 }
 
-pub trait ObserverNotifier<T> {
+/**
+Provides inline notifications when a task completes.
+
+The main difference between this and [crate::Observer] is that the observer can be polled to find
+out if the task is done, while the notifier will be run inline when the task completes.
+
+When the task is cancelled, the notifier will be dropped without running.  In this way one can
+also receive inline notifications for cancellation.
+
+# Design
+
+The notifier is used inline in a future, (in a pinned context).  Accordingly there are two
+possible designs:
+
+1.  Use immutable references to the notifier.  But notifiers may want to have some mutable state,
+    forcing them to figure out interior mutability and synchronization
+2.  Require Unpin, allowing the type to be moved into the future.  This is the design we have chosen.
+*/
+pub trait ObserverNotifier<T>: Unpin {
+
+    /**
+    This function will be run inline when the task completes.
+*/
     fn notify(&mut self, value: &T);
 }
 

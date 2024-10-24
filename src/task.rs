@@ -20,6 +20,11 @@ pub struct Task<F> where F: Future {
     poll_after: std::time::Instant,
 }
 
+/**
+A task suitable for spawning.
+
+Executors convert [Task] into this type in order to poll the future.
+*/
 pub struct SpanwedTask<F,Notifier> where F: Future {
     task: Task<F>,
     sender: ObserverSender<F::Output,Notifier>
@@ -69,13 +74,14 @@ impl<F: Future> Task<F> {
 
 }
 
-impl<F,Notifier> Future for SpanwedTask<F,Notifier> where F: Future {
+
+impl<F,Notifier> Future for SpanwedTask<F,Notifier> where F: Future, Notifier: ObserverNotifier<F::Output> {
     type Output = ();
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         assert!(self.task.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let (future,sender) = unsafe {
+        let (future,mut sender) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.task.future);
             let sender = Pin::new_unchecked(&mut unchecked.sender);
@@ -84,7 +90,8 @@ impl<F,Notifier> Future for SpanwedTask<F,Notifier> where F: Future {
 
         match future.poll(cx) {
             Poll::Ready(r) => {
-                sender.send(r);
+
+                sender.get_mut().send(r);
                 Poll::Ready(())
             }
             Poll::Pending => {

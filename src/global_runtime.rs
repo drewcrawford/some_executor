@@ -37,7 +37,7 @@ pub fn set_global_runtime(runtime: Box<dyn SomeExecutor>) {
                 Box::new(()) as Box<dyn Any>
                 // todo!()
             }), configuration);
-            runtime.spawn_objsafe(task);
+            runtime.spawn_objsafe(task, None);
         }
     }
 }
