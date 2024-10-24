@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub enum Observation<T> {
     /**
     The task is pending.
@@ -20,7 +21,7 @@ pub enum Observation<T> {
 }
 
 
-
+#[derive(Debug)]
 struct Shared<T> {
     //for now, we implement this with a mutex
     lock: std::sync::Mutex<Observation<T>>,
@@ -34,6 +35,7 @@ pub struct Observer<T> {
     shared: Arc<Shared<T>>
 }
 
+#[derive(Debug)]
 pub(crate) struct ObserverSender<T,Notifier> {
     shared: Arc<Shared<T>>,
     pub(crate) notifier: Option<Notifier>
