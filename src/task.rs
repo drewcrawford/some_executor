@@ -1,5 +1,11 @@
+use std::future::Future;
 use crate::hint::Hint;
 
+/**
+A top-level future.
+
+The Task contains information that can be useful to an executor when deciding how to run the future.
+*/
 pub struct Task<F> {
     label: &'static str,
     future: F,
@@ -13,6 +19,30 @@ impl<F> Task<F> {
             future,
             configuration
         }
+    }
+    pub fn label(&self) -> &'static str {
+        self.label
+    }
+
+    pub fn hint(&self) -> Hint {
+        self.configuration.hint
+    }
+
+    pub fn priority(&self) -> priority::Priority {
+        self.configuration.priority
+    }
+
+    pub fn poll_after(&self) -> std::time::Instant {
+        self.configuration.poll_after
+    }
+}
+
+impl<F> Future for Task<F> where F: Future {
+    type Output = F::Output;
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        let f = unsafe { self.map_unchecked_mut(|s| &mut s.future) };
+        f.poll(cx)
     }
 }
 

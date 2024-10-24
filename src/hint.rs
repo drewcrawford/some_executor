@@ -2,6 +2,7 @@
 A type that describes the expected runtime characteristics of the future.
 */
 #[non_exhaustive]
+#[derive(Copy,Clone)]
 pub enum Hint {
     /**
     We don't know anything about the future.
