@@ -30,7 +30,7 @@ pub fn set_global_runtime(runtime: Box<dyn SomeExecutor>) {
         fn dont_execute_just_compile() {
             let mut runtime = global_runtime().clone_box();
             let configuration = ConfigurationBuilder::new().build();
-            let task = Task::new_objsafe("test", Box::new(async {}), configuration);
+            let task = Task::new_objsafe("test".into(), Box::new(async {}), configuration);
             runtime.spawn_objsafe(task);
         }
     }

@@ -11,27 +11,23 @@ A top-level future.
 The Task contains information that can be useful to an executor when deciding how to run the future.
 */
 pub struct Task<F> {
-    label: &'static str,
-    future: TaskLocalFuture<&'static str, F>,
+    future: TaskLocalFuture<String, F>,
     configuration: Configuration,
 }
 
 task_local! {
-    static TASK_LABEL: &'static str;
+    static TASK_LABEL: String;
 }
 
 impl<F> Task<F> {
-    pub fn new(label: &'static str, future: F, configuration: Configuration) -> Self where F: Future {
+    pub fn new(label: String, future: F, configuration: Configuration) -> Self where F: Future {
         let apply_label = TASK_LABEL.scope(label, future);
         Task {
-            label,
             future: apply_label,
             configuration,
         }
     }
-    pub fn label(&self) -> &'static str {
-        self.label
-    }
+
 
     pub fn hint(&self) -> Hint {
         self.configuration.hint
@@ -65,10 +61,9 @@ impl<F> Future for Task<F> where F: Future {
 }
 
 impl Task<Pin<Box<dyn Future<Output=()> + Send + 'static>>> {
-    pub fn new_objsafe(label: &'static str, future: Box<dyn Future<Output=()> + Send + 'static>, configuration: Configuration) -> Self {
+    pub fn new_objsafe(label: String, future: Box<dyn Future<Output=()> + Send + 'static>, configuration: Configuration) -> Self {
         let apply_label = TASK_LABEL.scope(label, Box::into_pin(future));
         Task {
-            label,
             future: apply_label,
             configuration,
         }
