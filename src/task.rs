@@ -1,7 +1,9 @@
 use std::future::Future;
 use std::ops::Sub;
 use std::pin::Pin;
+use crate::context::TaskLocalFuture;
 use crate::hint::Hint;
+use crate::task_local;
 
 /**
 A top-level future.
@@ -10,15 +12,20 @@ The Task contains information that can be useful to an executor when deciding ho
 */
 pub struct Task<F> {
     label: &'static str,
-    future: F,
+    future: TaskLocalFuture<&'static str, F>,
     configuration: Configuration,
 }
 
+task_local! {
+    static TASK_LABEL: &'static str;
+}
+
 impl<F> Task<F> {
-    pub fn new(label: &'static str, future: F, configuration: Configuration) -> Self {
+    pub fn new(label: &'static str, future: F, configuration: Configuration) -> Self where F: Future {
+        let apply_label = TASK_LABEL.scope(label, future);
         Task {
             label,
-            future,
+            future: apply_label,
             configuration,
         }
     }
@@ -51,11 +58,23 @@ impl<F> Future for Task<F> where F: Future {
             (future)
         };
 
-        let poll_result = future.poll(cx);
-        poll_result
+        future.poll(cx)
+
 
     }
 }
+
+impl Task<Pin<Box<dyn Future<Output=()>>>> {
+    pub fn new_objsafe(label: &'static str, future: Box<dyn Future<Output=()>>, configuration: Configuration) -> Self {
+        let apply_label = TASK_LABEL.scope(label, Box::into_pin(future));
+        Task {
+            label,
+            future: apply_label,
+            configuration,
+        }
+    }
+}
+
 
 /**
 Information needed to spawn a task.
@@ -124,5 +143,22 @@ impl Configuration {
             priority,
             poll_after
         }
+    }
+}
+
+#[cfg(test)] mod tests {
+    use crate::task_local;
+    use super::TaskLocalFuture;
+    #[test] fn test_send() {
+        task_local!(
+            static FOO: u32;
+        );
+
+        let scoped = FOO.scope(42, async {});
+
+        fn assert_send<T: Send>(_: T) {}
+        assert_send(scoped);
+
+
     }
 }

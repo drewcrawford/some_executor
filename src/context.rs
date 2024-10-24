@@ -40,7 +40,7 @@ macro_rules! __task_local_inner {
     };
 }
 
-struct LocalKey<T: 'static>(std::thread::LocalKey<RefCell<Option<T>>>);
+pub struct LocalKey<T: 'static>(pub /* do not use */ std::thread::LocalKey<RefCell<Option<T>>>);
 
 /// A future that sets a value `T` of a task local for the future `F` during
 /// its execution.
@@ -49,7 +49,7 @@ struct LocalKey<T: 'static>(std::thread::LocalKey<RefCell<Option<T>>>);
 /// completion of the future.
 ///
 /// Created by the function [`LocalKey::scope`](self::LocalKey::scope).
-struct TaskLocalFuture<V: 'static,F> {
+pub(crate) struct TaskLocalFuture<V: 'static,F> {
     slot: Option<V>,
     local_key: &'static LocalKey<V>,
     future: F,

@@ -35,6 +35,7 @@ pub type Priority = priority::Priority;
 
 
 use std::future::Future;
+use std::pin::Pin;
 use crate::task::Task;
 /*
 Design notes.
@@ -84,9 +85,9 @@ pub trait SomeExecutor: Send + 'static + Sync {
 
     # Note
 
-    This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic properties.  Implementations probably pin this with [Box::into_pin].
+    This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_objsafe(&mut self, task: Task<Box<dyn Future<Output=()> + 'static + Send>>);
+    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=()> + 'static + Send> >>);
 
     /**
     Clones the executor.

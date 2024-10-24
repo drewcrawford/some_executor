@@ -28,8 +28,11 @@ pub fn set_global_runtime(runtime: Box<dyn SomeExecutor>) {
 
     #[test] fn global_pattern() {
         fn dont_execute_just_compile() {
-            let mut runtime = global_runtime().clone_box();
-            runtime.spawn_objsafe(Task::new("test", Box::new(async { }), ConfigurationBuilder::new().build()));
+            // let mut runtime = global_runtime().clone_box();
+            // let configuration = ConfigurationBuilder::new().build();
+            // let task = Task::new_objsafe("test", Box::new(async {}), configuration);
+            // runtime.spawn_objsafe(task);
         }
+        panic!()
     }
 }
