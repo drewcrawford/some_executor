@@ -2,6 +2,7 @@ use std::any::Any;
 use std::future::Future;
 use std::ops::Sub;
 use std::pin::Pin;
+use std::task::Poll;
 use priority::Priority;
 use crate::context::TaskLocalFuture;
 use crate::hint::Hint;
@@ -68,18 +69,27 @@ impl<F: Future> Task<F> {
 }
 
 impl<F> Future for Task<F> where F: Future {
-    type Output = F::Output;
+    type Output = ();
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let future = unsafe {
+        let (future,sender) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.future);
-            future
+            let sender = Pin::new_unchecked(&mut unchecked.observer_sender);
+            (future,sender)
         };
 
-        future.poll(cx)
+        match future.poll(cx) {
+            Poll::Ready(r) => {
+                sender.send(r);
+                Poll::Ready(())
+            }
+            Poll::Pending => {
+                Poll::Pending
+            }
+        }
 
 
     }
