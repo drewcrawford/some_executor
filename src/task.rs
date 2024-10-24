@@ -1,7 +1,6 @@
 use std::future::Future;
 use std::ops::Sub;
 use std::pin::Pin;
-use crate::context::TaskContext;
 use crate::hint::Hint;
 
 /**
@@ -13,7 +12,6 @@ pub struct Task<F> {
     label: &'static str,
     future: F,
     configuration: Configuration,
-    context: Option<TaskContext>,
 }
 
 impl<F> Task<F> {
@@ -22,7 +20,6 @@ impl<F> Task<F> {
             label,
             future,
             configuration,
-            context: Some(TaskContext::default()),
         }
     }
     pub fn label(&self) -> &'static str {
@@ -48,22 +45,13 @@ impl<F> Future for Task<F> where F: Future {
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         assert!(self.configuration.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let (future, mut context) = unsafe {
+        let (future) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.future);
-            let context = Pin::new(&mut unchecked.context);
-            (future,context)
+            (future)
         };
 
-
-        TaskContext::current_mut(|c| {
-            *c = context.take();
-            assert!(c.is_some(), "TaskContext should be available.");
-        });
         let poll_result = future.poll(cx);
-        TaskContext::current_mut(|c| {
-            context.replace(c.take().expect("TaskContext should be available."));
-        });
         poll_result
 
     }

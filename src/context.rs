@@ -3,56 +3,26 @@ Provides a context type that can be used to query the current task.
 */
 
 use std::cell::RefCell;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
-pub struct TaskContext {
 
-}
-
-impl Default for TaskContext {
-    fn default() -> Self {
-        TaskContext {
-
-        }
-    }
-}
-
-thread_local! {
-    static CONTEXT: RefCell<Option<TaskContext>> = RefCell::new(None);
-}
-
-impl TaskContext {
-    /**
-    Provides access to the current context, within a closure.
-
-    If the current context is not available, the argument to the closure is None.
-    */
-    pub(crate) fn current_mut<F,R>(f: F) -> R where F: FnOnce(&mut Option<TaskContext>) -> R {
-        CONTEXT.with_borrow_mut(f)
-    }
-
-    /**
-    Provides access to the current context, within a closure.
-
-    If the current context is not available, the argument to the closure is None.
-    */
-    fn current<F,R>(f: F) -> R where F: FnOnce(&Option<TaskContext>) -> R {
-        CONTEXT.with_borrow(f)
-    }
-}
 
 #[macro_export]
 macro_rules! task_local {
-     // empty (base case for the recursion)
+// empty (base case for the recursion)
     () => {};
 
-    ($(#[$attr:meta])* $vis:vis static $name:ident: $t:ty; $($rest:tt)*) => {
+    ($(#[$attr:meta])* $vis:vis static $name:ident: $t:ty; $($rest:tt)*) => (
         $crate::__task_local_inner!($(#[$attr])* $vis $name, $t);
         $crate::task_local!($($rest)*);
-    };
+    );
 
-    ($(#[$attr:meta])* $vis:vis static $name:ident: $t:ty) => {
+    ($(#[$attr:meta])* $vis:vis static $name:ident: $t:ty) => (
         $crate::__task_local_inner!($(#[$attr])* $vis $name, $t);
-    }
+    );
+
 }
 
 #[doc(hidden)]
@@ -72,25 +42,93 @@ macro_rules! __task_local_inner {
 
 struct LocalKey<T: 'static>(std::thread::LocalKey<RefCell<Option<T>>>);
 
+/// A future that sets a value `T` of a task local for the future `F` during
+/// its execution.
+///
+/// The value of the task-local must be `'static` and will be dropped on the
+/// completion of the future.
+///
+/// Created by the function [`LocalKey::scope`](self::LocalKey::scope).
+struct TaskLocalFuture<V: 'static,F> {
+    slot: Option<V>,
+    local_key: &'static LocalKey<V>,
+    future: F,
+}
+impl<V,F> Future for TaskLocalFuture<V,F> where V: Unpin, F: Future {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        //destructure
+        let (future, slot, local_key) = unsafe {
+            let this = self.get_unchecked_mut();
+            let future = Pin::new_unchecked(&mut this.future);
+            let slot = Pin::new_unchecked(&mut this.slot);
+            let local_key = Pin::new_unchecked(&mut this.local_key);
+            (future,slot,local_key)
+        };
+
+        let mut_slot = Pin::get_mut(slot);
+        let value = mut_slot.take().expect("No value in slot");
+        let old_value = local_key.0.replace(Some(value));
+        assert!(old_value.is_none(), "Task-local already set");
+        let r = future.poll(cx);
+        //put value back in slot
+        let value = local_key.0.replace(None).expect("No value in slot");
+        mut_slot.replace(value);
+        r
+    }
+}
+
 impl<T: 'static> LocalKey<T> {
-    fn with<F, R>(&'static self, f: F) -> R
+    /**
+    Sets the value of the task-local for the duration of the future `F`.
+*/
+    pub fn scope<F>(&'static self, value: T, f: F) -> TaskLocalFuture<T, F>
     where
-        F: FnOnce(&T) -> R {
+        F: Future,
+    {
+        TaskLocalFuture {
+            slot: Some(value),
+            local_key: self,
+            future: f,
+        }
+    }
+
+    /**
+    Accesses the underlying task-local inside the closure.
+
+    If the task-local is not set, the closure receives `None`.
+*/
+    pub fn with<F, R>(&'static self, f: F) -> R
+    where
+        F: FnOnce(Option<&T>) -> R {
         self.0.with(|slot| {
-            f(&slot.borrow().as_ref().expect("task-local value not set"))
+            let value = slot.borrow();
+            f(value.as_ref())
         })
     }
+
+    /**
+    Accesses the underlying task-local inside the closure, mutably.
+
+    If the task-local is not set, the closure receives `None`.
+*/
+    pub fn with_mut<F, R>(&'static self, f: F) -> R
+    where
+        F: FnOnce(Option<&mut T>) -> R {
+        self.0.with(|slot| {
+            let mut value = slot.borrow_mut();
+            f(value.as_mut())
+        })
+    }
+
 }
 
 #[cfg(test)] mod tests {
     #[test] fn local() {
         task_local! {
             static FOO: u32;
-            static BAR: String;
         }
 
-        FOO.with(|f| {
-            assert_eq!(*f, 0);
-        });
     }
 }
