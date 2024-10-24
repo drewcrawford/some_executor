@@ -13,4 +13,4 @@ categories = ["asynchronous","concurrency"]
 exclude = [".*","art"]
 
 [dependencies]
-priority = {version = "~0"}
+priority = {git = "ssh://gitea@gitea.mermaid-gecko.ts.net/Metropolis/priority" }
