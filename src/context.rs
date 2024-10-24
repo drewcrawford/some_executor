@@ -122,6 +122,40 @@ impl<T: 'static> LocalKey<T> {
         })
     }
 
+    /**
+    Returns a copy of the contained value.
+*/
+    pub fn get(&'static self) -> T where T: Copy {
+        self.0.with(|slot| {
+            let value = slot.borrow();
+            value.expect("Task-local not set").clone()
+        })
+    }
+
+    /**
+    Sets or initializes the contained value.
+
+    Unlike the other methods, this will not run the lazy initializer of the thread local. Instead, it will be directly initialized with the given value if it wasn’t initialized yet.
+*/
+    pub fn set(&'static self, value: T) {
+        self.0.set(Some(value))
+    }
+
+    /**
+    Replaces the contained value, returning the old value.
+
+    This will lazily initialize the value if this thread has not referenced this key yet.
+*/
+    fn replace(&'static self, value: T) -> T {
+        self.0.replace(Some(value)).expect("Task-local not set")
+    }
+
+
+
+
+
+
+
 }
 
 #[cfg(test)] mod tests {
