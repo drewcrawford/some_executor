@@ -126,7 +126,7 @@ impl<F: Future> Task<F> {
     }
 
     pub fn spawn<Notifier: ObserverNotifier<F::Output>>(self, notify: Option<Notifier>) -> (SpawnedTask<F,Notifier>, Observer<F::Output>) {
-        let (sender, receiver) = observer_channel(notify);
+        let (sender, receiver) = observer_channel(notify,self.task_id);
         let spawned_task = SpawnedTask {
             task: self,
             sender

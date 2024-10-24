@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use crate::task::TaskID;
 
 #[derive(Debug)]
 pub enum Observation<T> {
@@ -31,8 +32,10 @@ struct Shared<T> {
 /**
 Observes information about a task.
 */
+#[derive(Debug)]
 pub struct Observer<T> {
-    shared: Arc<Shared<T>>
+    shared: Arc<Shared<T>>,
+    task_id: TaskID
 }
 
 #[derive(Debug)]
@@ -101,6 +104,12 @@ impl<T> Observer<T> {
             }
         }
     }
+    /**
+    Returns the task id of the task being observed.
+*/
+    pub fn task_id(&self) -> &TaskID {
+        &self.task_id
+    }
 }
 
 /**
@@ -136,7 +145,33 @@ impl<T> ObserverNotifier<T> for NoNotifier {
     }
 }
 
-pub(crate) fn observer_channel<R,Notifier>(notify: Option<Notifier>) -> (ObserverSender<R,Notifier>, Observer<R>) {
+pub(crate) fn observer_channel<R,Notifier>(notify: Option<Notifier>,task_id: TaskID) -> (ObserverSender<R,Notifier>, Observer<R>) {
     let shared = Arc::new(Shared { lock: std::sync::Mutex::new(Observation::Pending) });
-    (ObserverSender {shared: shared.clone(), notifier: notify}, Observer {shared})
+    (ObserverSender {shared: shared.clone(), notifier: notify}, Observer {shared, task_id})
+}
+
+/*
+boilerplates
+
+Observer - avoid copy/clone, Eq, Hash, default (channel), from/into, asref/asmut, deref, etc.
+ */
+
+#[cfg(test)] mod tests {
+    use crate::observer::Observer;
+
+    #[test] fn test_send() {
+
+        /* observer can send when the underlying value can */
+        fn ex<T: Send>(observer: Observer<T>) {
+            fn assert_send<T: Send>() {}
+            assert_send::<Observer<T>>();
+        }
+    }
+    #[test] fn test_unpin() {
+        /* observer can unpin */
+        fn ex<T>(observer: Observer<T>) {
+            fn assert_unpin<T: Unpin>() {}
+            assert_unpin::<Observer<T>>();
+        }
+    }
 }
