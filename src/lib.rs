@@ -28,9 +28,9 @@ This interface is unstable and may change.
 
 pub mod task;
 pub mod global_runtime;
-mod hint;
-mod context;
-mod observer;
+pub mod hint;
+pub mod context;
+pub mod observer;
 
 pub type Priority = priority::Priority;
 
@@ -157,7 +157,7 @@ pub trait LocalExecutorExt: LocalExecutor + Clone {
 
 
 #[cfg(test)] mod tests {
-    use crate::{DynExecutor, SomeExecutor};
+    use crate::{DynExecutor};
 
     #[test] fn test_is_objsafe() {
         #[allow(unused)]
