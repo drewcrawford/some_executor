@@ -6,7 +6,7 @@ use std::task::Poll;
 use priority::Priority;
 use crate::context::TaskLocalFuture;
 use crate::hint::Hint;
-use crate::observer::{observer_channel, Observer, ObserverSender};
+use crate::observer::{observer_channel, Observer, ObserverNotifier, ObserverSender};
 use crate::task_local;
 
 /**
@@ -18,8 +18,11 @@ pub struct Task<F> where F: Future {
     future: TaskLocalFuture<Priority, TaskLocalFuture<String, F>>,
     hint: Hint,
     poll_after: std::time::Instant,
-    observer_sender: ObserverSender<F::Output>,
-    observer: Option<Observer<F::Output>>
+}
+
+pub struct SpanwedTask<F,Notifier> where F: Future {
+    task: Task<F>,
+    sender: ObserverSender<F::Output,Notifier>
 }
 
 task_local! {
@@ -31,13 +34,10 @@ impl<F: Future> Task<F> {
     pub fn new(label: String, future: F, configuration: Configuration) -> Self where F: Future {
         let apply_label = TASK_LABEL.scope(label, future);
         let apply = TASK_PRIORITY.scope(configuration.priority, apply_label);
-        let (observer_sender, observer) = observer_channel();
         Task {
             future: apply,
             hint: configuration.hint,
             poll_after: configuration.poll_after,
-            observer_sender,
-            observer: Some(observer)
         }
     }
 
@@ -58,26 +58,27 @@ impl<F: Future> Task<F> {
         self.poll_after
     }
 
-    /**
-    Detaches an observer from the task.
-
-    This operation can only be called once.
-    */
-    pub fn detach_observer(&mut self) -> Observer<F::Output> where F: Future {
-        self.observer.take().expect("Observer already detached")
+    pub fn spawn<Notifier: ObserverNotifier<F::Output>>(self, notify: Option<Notifier>) -> (SpanwedTask<F,Notifier>, Observer<F::Output>) {
+        let (sender, receiver) = observer_channel(notify);
+        let spawned_task = SpanwedTask {
+            task: self,
+            sender
+        };
+        (spawned_task, receiver)
     }
+
 }
 
-impl<F> Future for Task<F> where F: Future {
+impl<F,Notifier> Future for SpanwedTask<F,Notifier> where F: Future {
     type Output = ();
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
+        assert!(self.task.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
         let (future,sender) = unsafe {
             let unchecked = self.get_unchecked_mut();
-            let future = Pin::new_unchecked(&mut unchecked.future);
-            let sender = Pin::new_unchecked(&mut unchecked.observer_sender);
+            let future = Pin::new_unchecked(&mut unchecked.task.future);
+            let sender = Pin::new_unchecked(&mut unchecked.sender);
             (future,sender)
         };
 

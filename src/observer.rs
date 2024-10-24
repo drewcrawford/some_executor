@@ -25,7 +25,6 @@ pub enum Observation<T> {
 
 struct Shared<T> {
     //for now, we implement this with a mutex
-
     lock: std::sync::Mutex<Observation<T>>,
 }
 
@@ -37,11 +36,12 @@ pub struct Observer<T> {
     shared: Arc<Shared<T>>
 }
 
-pub(crate) struct ObserverSender<T> {
-    shared: Arc<Shared<T>>
+pub(crate) struct ObserverSender<T,Notifier> {
+    shared: Arc<Shared<T>>,
+    notifier: Option<Notifier>
 }
 
-impl<T> ObserverSender<T> {
+impl<T,Notifier> ObserverSender<T,Notifier> {
     pub(crate) fn send(&self, value: T) {
         let mut lock = self.shared.lock.lock().unwrap();
         match *lock {
@@ -61,7 +61,7 @@ impl<T> ObserverSender<T> {
     }
 }
 
-impl<T> Drop for ObserverSender<T> {
+impl<T,Notifier> Drop for ObserverSender<T,Notifier> {
     fn drop(&mut self) {
         let mut lock = self.shared.lock.lock().unwrap();
         match *lock {
@@ -102,7 +102,18 @@ impl<T> Observer<T> {
     }
 }
 
-pub(crate) fn observer_channel<R>() -> (ObserverSender<R>, Observer<R>) {
+pub trait ObserverNotifier<T> {
+    fn notify(&mut self, value: &T);
+}
+
+pub struct NoNotifier;
+impl<T> ObserverNotifier<T> for NoNotifier {
+    fn notify(&mut self, _value: &T) {
+        panic!("NoNotifier should not be used");
+    }
+}
+
+pub(crate) fn observer_channel<R,Notifier>(notify: Option<Notifier>) -> (ObserverSender<R,Notifier>, Observer<R>) {
     let shared = Arc::new(Shared { lock: std::sync::Mutex::new(Observation::Pending) });
-    (ObserverSender {shared: shared.clone()}, Observer {shared})
+    (ObserverSender {shared: shared.clone(), notifier: notify}, Observer {shared})
 }
