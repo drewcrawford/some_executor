@@ -60,7 +60,7 @@ impl<V,F> TaskLocalFuture<V,F> {
     Gets access to the underlying value.
 */
 
-    pub fn get_val<R>(&self, closure:impl FnOnce(&V) -> R) -> R  {
+    pub(crate) fn get_val<R>(&self, closure:impl FnOnce(&V) -> R) -> R  {
         match self.slot {
             Some(ref value) => closure(value),
             None => self.local_key.with(|value| {
@@ -68,25 +68,25 @@ impl<V,F> TaskLocalFuture<V,F> {
             })
         }
     }
-    /**
-    Gets mutable access to the underlying value.
-*/
-    pub fn get_val_mut<R>(&mut self, closure:impl FnOnce(&mut V) -> R) -> R  {
-        match self.slot {
-            Some(ref mut value) => closure(value),
-            None => self.local_key.with_mut(|value| {
-                closure(value.expect("Value neither in slot nor in thread-local"))
-            })
-        }
-    }
+//     /**
+//     Gets mutable access to the underlying value.
+// */
+//     pub(crate) fn get_val_mut<R>(&mut self, closure:impl FnOnce(&mut V) -> R) -> R  {
+//         match self.slot {
+//             Some(ref mut value) => closure(value),
+//             None => self.local_key.with_mut(|value| {
+//                 closure(value.expect("Value neither in slot nor in thread-local"))
+//             })
+//         }
+//     }
 
-    pub fn get_future(&self) -> &F {
+    pub(crate) fn get_future(&self) -> &F {
         &self.future
     }
 
-    pub fn get_future_mut(&mut self) -> &mut F {
-        &mut self.future
-    }
+    // pub fn get_future_mut(&mut self) -> &mut F {
+    //     &mut self.future
+    // }
 }
 impl<V,F> Future for TaskLocalFuture<V,F> where V: Unpin, F: Future {
     type Output = F::Output;
@@ -117,7 +117,7 @@ impl<T: 'static> LocalKey<T> {
     /**
     Sets the value of the task-local for the duration of the future `F`.
 */
-    pub fn scope<F>(&'static self, value: T, f: F) -> TaskLocalFuture<T, F>
+    pub(crate) fn scope_internal<F>(&'static self, value: T, f: F) -> TaskLocalFuture<T, F>
     where
         F: Future,
     {
@@ -126,6 +126,13 @@ impl<T: 'static> LocalKey<T> {
             local_key: self,
             future: f,
         }
+    }
+
+    pub fn scope<F>(&'static self, value: T, f: F) -> impl Future<Output=F::Output>
+    where
+        F: Future, T: Unpin
+    {
+        self.scope_internal(value, f)
     }
 
     /**
@@ -180,7 +187,7 @@ impl<T: 'static> LocalKey<T> {
 
     This will lazily initialize the value if this thread has not referenced this key yet.
 */
-    fn replace(&'static self, value: T) -> T {
+    pub fn replace(&'static self, value: T) -> T {
         self.0.replace(Some(value)).expect("Task-local not set")
     }
 
@@ -195,6 +202,7 @@ impl<T: 'static> LocalKey<T> {
 #[cfg(test)] mod tests {
     #[test] fn local() {
         task_local! {
+            #[allow(unused)]
             static FOO: u32;
         }
 

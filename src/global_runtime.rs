@@ -28,6 +28,7 @@ pub fn set_global_runtime(runtime: Box<dyn SomeExecutor>) {
     use crate::task::{ConfigurationBuilder, Task};
 
     #[test] fn global_pattern() {
+        #[allow(unused)]
         fn dont_execute_just_compile() {
             let mut runtime = global_runtime().clone_box();
             let configuration = ConfigurationBuilder::new().build();

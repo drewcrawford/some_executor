@@ -37,8 +37,8 @@ task_local! {
 
 impl<F: Future> Task<F> {
     pub fn new(label: String, future: F, configuration: Configuration) -> Self where F: Future {
-        let apply_label = TASK_LABEL.scope(label, future);
-        let apply = TASK_PRIORITY.scope(configuration.priority, apply_label);
+        let apply_label = TASK_LABEL.scope_internal(label, future);
+        let apply = TASK_PRIORITY.scope_internal(configuration.priority, apply_label);
         Task {
             future: apply,
             hint: configuration.hint,
@@ -81,7 +81,7 @@ impl<F,Notifier> Future for SpanwedTask<F,Notifier> where F: Future, Notifier: O
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         assert!(self.task.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let (future,mut sender) = unsafe {
+        let (future,sender) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.task.future);
             let sender = Pin::new_unchecked(&mut unchecked.sender);
@@ -171,7 +171,7 @@ impl ConfigurationBuilder {
 }
 
 impl Configuration {
-    fn new(hint: Hint, priority: priority::Priority, poll_after: std::time::Instant) -> Self {
+    pub fn new(hint: Hint, priority: priority::Priority, poll_after: std::time::Instant) -> Self {
         Configuration {
             hint,
             priority,

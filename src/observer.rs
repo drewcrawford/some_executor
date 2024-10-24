@@ -1,6 +1,4 @@
-use std::cell::UnsafeCell;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 pub enum Observation<T> {
     /**

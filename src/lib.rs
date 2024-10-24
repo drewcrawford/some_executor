@@ -26,8 +26,8 @@ This crate also defines a 'global' executor, suitable for 'get' by library code 
 This interface is unstable and may change.
 */
 
-mod task;
-mod global_runtime;
+pub mod task;
+pub mod global_runtime;
 mod hint;
 mod context;
 mod observer;
@@ -80,7 +80,7 @@ pub trait SomeExecutor: Send + 'static + Sync {
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
 */
-    async fn spawn_async<F: Future + Send + 'static,Notifier>(&mut self, task: Task<F>, notifier: Option<Notifier>) -> Observer<F::Output> where Self: Sized;
+    fn spawn_async<F: Future + Send + 'static,Notifier>(&mut self, task: Task<F>, notifier: Option<Notifier>) -> impl Future<Output=Observer<F::Output>> + Send + 'static where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
@@ -126,7 +126,7 @@ pub trait LocalExecutor: SomeExecutor {
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
     */
-    async fn spawn_local_async<F: Future,Notifier: ObserverNotifier<F::Output>>(&mut self, task: Task<F>, notifier: Option<Notifier>)  -> Observer<F::Output> where Self: Sized;
+    fn spawn_local_async<F: Future,Notifier: ObserverNotifier<F::Output>>(&mut self, task: Task<F>, notifier: Option<Notifier>)  -> impl Future<Output=Observer<F::Output>> + Send + 'static where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
@@ -154,6 +154,7 @@ pub trait LocalExecutorExt: LocalExecutor + Clone {
     use crate::SomeExecutor;
 
     #[test] fn test_is_objsafe() {
+        #[allow(unused)]
         fn is_objsafe(_obj: &dyn SomeExecutor) {}
     }
 }
