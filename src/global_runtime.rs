@@ -1,6 +1,5 @@
 use std::sync::OnceLock;
-use crate::observer::ExecutorNotified;
-use crate::{DynExecutor, SomeExecutor};
+use crate::{DynExecutor};
 
 static GLOBAL_RUNTIME: OnceLock<Box<DynExecutor>> = OnceLock::new();
 

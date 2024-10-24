@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::sync::atomic::AtomicU64;
 use std::task::Poll;
 use priority::Priority;
-use crate::context::TaskLocalFuture;
+use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
 use crate::task_local;
@@ -44,7 +44,7 @@ The Task contains information that can be useful to an executor when deciding ho
 #[derive(Debug)]
 #[must_use]
 pub struct Task<F> where F: Future {
-    future: TaskLocalFuture<Priority, TaskLocalFuture<String, F>>,
+    future: TaskLocalImmutableFuture<Priority, TaskLocalImmutableFuture<String, F>>,
     hint: Hint,
     poll_after: std::time::Instant,
     task_id: TaskID,
@@ -84,8 +84,8 @@ impl<F: Future, ONotifier,ENotifier> SpawnedTask<F,ONotifier,ENotifier> {
 }
 
 task_local! {
-    pub static TASK_LABEL: String;
-    pub static TASK_PRIORITY: priority::Priority;
+    pub static const TASK_LABEL: String;
+    pub static const TASK_PRIORITY: priority::Priority;
 }
 
 impl<F: Future> Task<F> {
