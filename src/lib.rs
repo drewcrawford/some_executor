@@ -29,6 +29,7 @@ This interface is unstable and may change.
 mod task;
 mod global_runtime;
 mod hint;
+mod context;
 
 pub type Priority = priority::Priority;
 
