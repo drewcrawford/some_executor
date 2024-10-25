@@ -130,6 +130,9 @@ task_local! {
      */
     pub static const TASK_ID: TaskID;
 
+    /**
+    Provides an executor local to the current task.
+*/
     pub static const TASK_EXECUTOR: Box<DynExecutor>;
 }
 
@@ -179,10 +182,10 @@ impl<F: Future,N> Task<F,N> {
         self.future.into_future().into_future().into_future().into_future()
     }
 
-    pub fn spawn<ENotifier: ExecutorNotified>(mut self,executor_notifier: Option<ENotifier>) -> (SpawnedTask<F,N,ENotifier>, Observer<F::Output,ENotifier>) {
+    pub fn spawn<Executor: SomeExecutor>(mut self,executor: &mut Executor) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
         let cancellation = self.task_cancellation();
         let task_id = self.task_id();
-        let (sender, receiver) = observer_channel(self.notifier.take(),executor_notifier,cancellation,task_id);
+        let (sender, receiver) = observer_channel(self.notifier.take(),executor.executor_notifier(),cancellation,task_id);
         let spawned_task = SpawnedTask {
             task: self,
             sender,
@@ -378,17 +381,8 @@ impl <F: Future,N> AsMut<F> for Task<F,N> {
 Analogously, for spawned task...
  */
 
-impl Default for SpawnedTask<DefaultFuture,NoNotified,NoNotified> {
-    fn default() -> Self {
-        Task::default().spawn(None).0
-    }
-}
 
-impl<F: Future> From<F> for SpawnedTask<F,NoNotified,NoNotified> {
-    fn from(future: F) -> Self {
-        Task::from(future).spawn(None).0
-    }
-}
+
 
 
 impl<F: Future> AsRef<F> for SpawnedTask<F,NoNotified,NoNotified> {
@@ -433,9 +427,9 @@ impl Into<bool> for InFlightTaskCancellation {
 
 #[cfg(test)] mod tests {
     use std::future::Future;
-    use crate::observer::NoNotified;
+    use crate::observer::{ExecutorNotified, NoNotified};
     use crate::task::{SpawnedTask, Task};
-    use crate::task_local;
+    use crate::{task_local, SomeExecutor};
     #[test] fn test_send() {
         task_local!(
             static FOO: u32;
@@ -467,22 +461,22 @@ impl Into<bool> for InFlightTaskCancellation {
         }
 
         #[allow(unused)]
-        fn spawn_check<F: Future + Send,N: Send>(task: Task<F,N>) where F::Output: Send {
-            let spawned: SpawnedTask<F,N,NoNotified> = task.spawn(None).0;
+        fn spawn_check<F: Future + Send,E: SomeExecutor>(task: Task<F,NoNotified>, exec: &mut E) where F::Output: Send, E::ExecutorNotifier: Send {
+            let spawned: SpawnedTask<F,NoNotified,E::ExecutorNotifier> = task.spawn(exec).0;
             fn assert_send<T: Send>(_: T) {}
             assert_send(spawned);
         }
 
         #[allow(unused)]
-        fn spawn_check_sync<F: Future + Sync,N: Sync>(task: Task<F,N>) where F::Output: Send {
-            let spawned: SpawnedTask<F,N,NoNotified> = task.spawn(None).0;
+        fn spawn_check_sync<F: Future + Sync, E: SomeExecutor>(task: Task<F,NoNotified>, exec: &mut E) where F::Output: Send, E::ExecutorNotifier: Sync {
+            let spawned: SpawnedTask<F,NoNotified,E::ExecutorNotifier> = task.spawn(exec).0;
             fn assert_sync<T: Sync>(_: T) {}
             assert_sync(spawned);
         }
 
         #[allow(unused)]
-        fn spawn_check_unpin<F: Future + Unpin,N: Unpin>(task: Task<F,N>) {
-            let spawned: SpawnedTask<F,N,NoNotified> = task.spawn(None).0;
+        fn spawn_check_unpin<F: Future + Unpin,E: SomeExecutor>(task: Task<F,NoNotified>, exec: &mut E) where E::ExecutorNotifier: Unpin {
+            let spawned: SpawnedTask<F,NoNotified,E::ExecutorNotifier> = task.spawn(exec).0;
             fn assert_unpin<T: Unpin>(_: T) {}
             assert_unpin(spawned);
         }

@@ -100,6 +100,11 @@ pub trait SomeExecutor: Send + 'static + Sync {
     The returned value will spawn tasks onto the same executor.
 */
     fn clone_box(&self) -> Box<dyn SomeExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>;
+
+    /**
+    Produces an executor notifier.
+*/
+    fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
 }
 
 /**
