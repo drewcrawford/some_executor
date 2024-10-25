@@ -206,6 +206,7 @@ A placeholder type that implements ObserverNotified and ExecutorNotified, but pa
 
 You can use this to specify that you don't want to use notifications.
 */
+#[derive(Debug,Clone,Copy,PartialEq,Eq,Hash)]
 pub struct NoNotified;
 impl<T> ObserverNotified<T> for NoNotified {
     fn notify(&mut self, _value: &T) {
