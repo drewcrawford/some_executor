@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::ops::Sub;
+use std::ops::{Deref, Sub};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -396,6 +396,32 @@ impl<F: Future> AsMut<F> for SpawnedTask<F,NoNotified,NoNotified> {
         self.task_mut().as_mut()
     }
 }
+
+/*
+InFlightTaskCancellation
+- don't want to publish clone right now.  Eliminates Copy,Eq,Hash, etc.
+
+Default is possible I suppose
+ */
+
+impl Default for InFlightTaskCancellation {
+    fn default() -> Self {
+        InFlightTaskCancellation(Arc::new(AtomicBool::new(false)))
+    }
+}
+
+impl From<bool> for InFlightTaskCancellation {
+    fn from(value: bool) -> Self {
+        InFlightTaskCancellation(Arc::new(AtomicBool::new(value)))
+    }
+}
+
+impl Into<bool> for InFlightTaskCancellation {
+    fn into(self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
 
 
 
