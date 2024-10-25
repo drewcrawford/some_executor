@@ -153,7 +153,7 @@ impl<T,E: ExecutorNotified> Observer<T,E> {
     /**
     Detaches from the active task, allowing it to continue running indefinitely.
     */
-    pub fn detach(&mut self) {
+    pub fn detach(mut self) {
         self.notifier.take();
         self.detached = true;
     }
