@@ -153,7 +153,8 @@ impl<F,ONotifier,ENotifier> Future for SpawnedTask<F,ONotifier,ENotifier> where 
             (future,sender)
         };
 
-        if sender.is_cancelled() {
+        if sender.observer_cancelled() {
+            //we don't really need to notify the observer here.  Also the notifier will run upon drop.
             return Poll::Ready(());
         }
         match future.poll(cx) {

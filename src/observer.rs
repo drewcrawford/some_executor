@@ -40,6 +40,15 @@ Observes information about a task.
 Dropping the observer requests cancellation.
 
 To detach instead, use [crate::task::Task::detach].
+
+# Cancellation
+
+Cancellation in some_executor is optimistic.  There are three implementations:
+
+1.  some_executor itself guarantees that polls that occur logically after the cancellation will not be run.  So this "lightweight cancellation" is free and universal.
+2.  The task may currently be in the process of being polled.  In this case, cancellation depends on how the task itself (that is, futures themselves, async code itself) reacts to cancellation through the `IS_CANCELLED` task local.
+    Task support is sporadic and not guaranteed.
+3.  The executor may support cancellation.  In this case, it may try to stop polling the future altogether.  This is not guaranteed.
 */
 #[must_use]
 #[derive(Debug)]
@@ -87,7 +96,7 @@ impl<T,Notifier> ObserverSender<T,Notifier> {
         }
     }
 
-    pub(crate) fn is_cancelled(&self) -> bool {
+    pub(crate) fn observer_cancelled(&self) -> bool {
         self.shared.observer_cancelled.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
@@ -176,6 +185,8 @@ pub trait ObserverNotified<T>: Unpin {
 pub trait ExecutorNotified {
     /**
     This function is called when the user requests the task be cancelled.
+
+    It is not required that executors handle this, but it may provide some efficiency.
     */
     fn request_cancel(&mut self);
 }
