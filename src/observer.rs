@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use crate::task::TaskID;
+use crate::task::{InFlightTaskCancellation, TaskID};
 
 #[derive(Debug)]
 pub enum Observation<T> {
@@ -31,6 +31,7 @@ struct Shared<T> {
     Indicates the observer was dropped without detach.
     */
     observer_cancelled: AtomicBool,
+    in_flight_task_cancellation: InFlightTaskCancellation,
 }
 
 
@@ -43,12 +44,12 @@ To detach instead, use [crate::task::Task::detach].
 
 # Cancellation
 
-Cancellation in some_executor is optimistic.  There are three implementations:
+Cancellation in some_executor is optimistic.  There are three types:
 
 1.  some_executor itself guarantees that polls that occur logically after the cancellation will not be run.  So this "lightweight cancellation" is free and universal.
 2.  The task may currently be in the process of being polled.  In this case, cancellation depends on how the task itself (that is, futures themselves, async code itself) reacts to cancellation through the `IS_CANCELLED` task local.
     Task support is sporadic and not guaranteed.
-3.  The executor may support cancellation.  In this case, it may try to stop polling the future altogether.  This is not guaranteed.
+3.  The executor may support cancellation.  In this case, it may drop the future and not run it again.  This is not guaranteed.
 */
 #[must_use]
 #[derive(Debug)]
@@ -65,6 +66,7 @@ impl<T,ENotifier: ExecutorNotified> Drop for Observer<T,ENotifier> {
     fn drop(&mut self) {
         if !self.detached {
             self.shared.observer_cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+            self.shared.in_flight_task_cancellation.cancel();
             self.notifier.take().map(|mut n| n.request_cancel());
         }
     }
@@ -103,6 +105,7 @@ impl<T,Notifier> ObserverSender<T,Notifier> {
 
 impl<T,Notifier> Drop for ObserverSender<T,Notifier> {
     fn drop(&mut self) {
+        self.shared.in_flight_task_cancellation.cancel();
         let mut lock = self.shared.lock.lock().unwrap();
         match *lock {
             Observation::Pending => {
@@ -182,15 +185,27 @@ pub trait ObserverNotified<T>: Unpin {
     fn notify(&mut self, value: &T);
 }
 
+/**
+A trait for executors to receive notifications.
+
+Handling notifications is optional.  If your executor does not want to bother, pass `None` in place
+of functions taking this type, and set the type to [NoNotified].
+*/
 pub trait ExecutorNotified {
     /**
     This function is called when the user requests the task be cancelled.
 
     It is not required that executors handle this, but it may provide some efficiency.
+
     */
     fn request_cancel(&mut self);
 }
 
+/**
+A placeholder type that implements ObserverNotified and ExecutorNotified, but panics when used.
+
+You can use this to specify that you don't want to use notifications.
+*/
 pub struct NoNotified;
 impl<T> ObserverNotified<T> for NoNotified {
     fn notify(&mut self, _value: &T) {
@@ -204,8 +219,8 @@ impl ExecutorNotified for NoNotified {
     }
 }
 
-pub(crate) fn observer_channel<R,ONotifier,ENotifier: ExecutorNotified>(observer_notify: Option<ONotifier>, executor_notify: Option<ENotifier>, task_id: TaskID) -> (ObserverSender<R,ONotifier>, Observer<R,ENotifier>) {
-    let shared = Arc::new(Shared { lock: std::sync::Mutex::new(Observation::Pending), observer_cancelled: AtomicBool::new(false)});
+pub(crate) fn observer_channel<R,ONotifier,ENotifier: ExecutorNotified>(observer_notify: Option<ONotifier>, executor_notify: Option<ENotifier>, task_cancellation: InFlightTaskCancellation, task_id: TaskID) -> (ObserverSender<R,ONotifier>, Observer<R,ENotifier>) {
+    let shared = Arc::new(Shared { lock: std::sync::Mutex::new(Observation::Pending), observer_cancelled: AtomicBool::new(false), in_flight_task_cancellation: task_cancellation });
     (ObserverSender {shared: shared.clone(), notifier: observer_notify}, Observer {shared, task_id, notifier: executor_notify, detached: false})
 }
 
