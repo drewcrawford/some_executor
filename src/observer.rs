@@ -241,6 +241,7 @@ impl ExecutorNotified for Box<dyn ExecutorNotified> {
 boilerplates
 
 Observer - avoid copy/clone, Eq, Hash, default (channel), from/into, asref/asmut, deref, etc.
+
  */
 
 #[cfg(test)] mod tests {

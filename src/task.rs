@@ -21,19 +21,15 @@ pub struct TaskID(u64);
 
 impl<F: Future> From<&Task<F>> for TaskID {
     fn from(task: &Task<F>) -> Self {
-        task.task_id
-    }
-}
-
-impl<F: Future> AsRef<TaskID> for Task<F> {
-    fn as_ref(&self) -> &TaskID {
-        &self.task_id
+        task.task_id()
     }
 }
 
 
 
-static TASK_ID: AtomicU64 = AtomicU64::new(0);
+
+
+static TASK_IDS: AtomicU64 = AtomicU64::new(0);
 
 
 /**
@@ -44,10 +40,9 @@ The Task contains information that can be useful to an executor when deciding ho
 #[derive(Debug)]
 #[must_use]
 pub struct Task<F> where F: Future {
-    future: TaskLocalImmutableFuture<InFlightTaskCancellation, TaskLocalImmutableFuture<priority::Priority, TaskLocalImmutableFuture<String, F>>>,
+    future: TaskLocalImmutableFuture<TaskID, TaskLocalImmutableFuture<InFlightTaskCancellation, TaskLocalImmutableFuture<priority::Priority, TaskLocalImmutableFuture<String, F>>>>,
     hint: Hint,
     poll_after: std::time::Instant,
-    task_id: TaskID,
 }
 
 /**
@@ -128,20 +123,26 @@ task_local! {
     Tasks can use this to determine if they should stop running.
 */
     pub static const IS_CANCELLED: InFlightTaskCancellation;
+
+    /**
+    Provides a unique identifier for the current task.
+     */
+    pub static const TASK_ID: TaskID;
 }
 
 impl<F: Future> Task<F> {
     pub fn new(label: String, future: F, configuration: Configuration) -> Self where F: Future {
+        let task_id = TaskID(TASK_IDS.fetch_add(1,std::sync::atomic::Ordering::Relaxed));
+
         let apply_label = TASK_LABEL.scope_internal(label, future);
         let apply_priority = TASK_PRIORITY.scope_internal(configuration.priority, apply_label);
-        let apply = IS_CANCELLED.scope_internal(InFlightTaskCancellation(Arc::new(AtomicBool::new(false))), apply_priority);
-        let task_id = TaskID(TASK_ID.fetch_add(1,std::sync::atomic::Ordering::Relaxed));
+        let apply_cancellation = IS_CANCELLED.scope_internal(InFlightTaskCancellation(Arc::new(AtomicBool::new(false))), apply_priority);
+        let apply = TASK_ID.scope_internal(task_id, apply_cancellation);
         assert_ne!(task_id.0, 0, "TaskID overflow");
         Task {
             future: apply,
             hint: configuration.hint,
             poll_after: configuration.poll_after,
-            task_id,
         }
     }
 
@@ -151,15 +152,15 @@ impl<F: Future> Task<F> {
     }
 
     pub fn label(&self) -> String {
-        self.future.get_future().get_future().get_val(|label| label.clone())
+        self.future.get_future().get_future().get_future().get_val(|label| label.clone())
     }
 
     pub fn priority(&self) -> priority::Priority {
-        self.future.get_future().get_val(|priority| *priority)
+        self.future.get_future().get_future().get_val(|priority| *priority)
     }
 
     pub(crate) fn task_cancellation(&self) -> InFlightTaskCancellation {
-        self.future.get_val(|cancellation| cancellation.clone())
+        self.future.get_future().get_val(|cancellation| cancellation.clone())
     }
 
     pub fn poll_after(&self) -> std::time::Instant {
@@ -167,15 +168,15 @@ impl<F: Future> Task<F> {
     }
 
     pub fn task_id(&self) -> TaskID {
-        self.task_id
+        self.future.get_val(|task_id| *task_id)
     }
 
     pub fn into_future(self) -> F {
-        self.future.into_future().into_future().into_future()
+        self.future.into_future().into_future().into_future().into_future()
     }
 
     pub fn spawn<ONotifier: ObserverNotified<F::Output>,ENotifier: ExecutorNotified>(self, observer_notifier: Option<ONotifier>,executor_notifier: Option<ENotifier>) -> (SpawnedTask<F,ONotifier,ENotifier>, Observer<F::Output,ENotifier>) {
-        let (sender, receiver) = observer_channel(observer_notifier,executor_notifier,self.task_cancellation().clone(),self.task_id);
+        let (sender, receiver) = observer_channel(observer_notifier,executor_notifier,self.task_cancellation().clone(),self.task_id());
         let spawned_task = SpawnedTask {
             task: self,
             sender,
@@ -353,7 +354,7 @@ Support AsRef for the underlying future type
 
 impl<F: Future> AsRef<F> for Task<F> {
     fn as_ref(&self) -> &F {
-        self.future.get_future().get_future().get_future()
+        self.future.get_future().get_future().get_future().get_future()
     }
 }
 
@@ -362,7 +363,7 @@ Support AsMut for the underlying future type
  */
 impl <F: Future> AsMut<F> for Task<F> {
     fn as_mut(&mut self) -> &mut F {
-        self.future.get_future_mut().get_future_mut().get_future_mut()
+        self.future.get_future_mut().get_future_mut().get_future_mut().get_future_mut()
     }
 }
 
