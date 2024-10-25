@@ -83,7 +83,7 @@ impl<F: Future, ONotifier,ENotifier> SpawnedTask<F,ONotifier,ENotifier> {
 
 }
 /**
-Provides information about the task that is currently running.
+Provides information about the cancellation status of the current task.
 */
 #[derive(Debug)]
 pub struct InFlightTaskCancellation(Arc<AtomicBool>);
@@ -98,13 +98,35 @@ impl InFlightTaskCancellation {
         self.0.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /**
+    Returns true if the task has been cancelled.
+
+    Code inside the task may wish to check this and return early.
+
+    It is not required that anyone check this value.
+    */
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
 
 }
 
 
 task_local! {
+    /**
+    Provides a debugging label to identify the current task.
+*/
     pub static const TASK_LABEL: String;
+    /**
+    Provides a priority for the current task.
+     */
     pub static const TASK_PRIORITY: priority::Priority;
+    /**
+    Provides a mechanism for tasks to determine if they have been cancelled.
+
+    Tasks can use this to determine if they should stop running.
+*/
     pub static const IS_CANCELLED: InFlightTaskCancellation;
 }
 
