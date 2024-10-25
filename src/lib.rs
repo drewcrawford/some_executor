@@ -29,10 +29,11 @@ This interface is unstable and may change.
 */
 
 pub mod task;
-pub mod global_runtime;
+pub mod global_executor;
 pub mod hint;
 pub mod context;
 pub mod observer;
+mod thread_executor;
 
 pub type Priority = priority::Priority;
 

@@ -446,7 +446,7 @@ impl Into<bool> for InFlightTaskCancellation {
 
 #[cfg(test)] mod tests {
     use std::future::Future;
-    use crate::observer::{ExecutorNotified, NoNotified};
+    use crate::observer::{NoNotified};
     use crate::task::{SpawnedTask, Task};
     use crate::{task_local, SomeExecutor};
     #[test] fn test_send() {
