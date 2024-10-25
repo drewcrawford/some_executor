@@ -171,6 +171,11 @@ pub trait LocalExecutorExt: LocalExecutor + Clone {
 
 }
 
+/**
+The appropriate type for a dynamically-dispatched local executor
+*/
+
+pub type DynLocalExecutor = dyn LocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>;
 
 
 #[cfg(test)] mod tests {
