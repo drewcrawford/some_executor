@@ -9,7 +9,7 @@ use std::task::Poll;
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
-use crate::task_local;
+use crate::{task_local, Priority};
 
 /**
 A task identifier.
@@ -240,9 +240,10 @@ pub struct Configuration {
 /**
 A builder for [Configuration].
 */
+#[derive(Debug,Clone,Copy,PartialEq,Eq,Hash,Default)]
 pub struct ConfigurationBuilder {
     hint: Option<Hint>,
-    priority: Option<priority::Priority>,
+    priority: Option<Priority>,
     poll_after: Option<std::time::Instant>,
 }
 
