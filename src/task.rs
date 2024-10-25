@@ -1,5 +1,6 @@
 use std::any::Any;
-use std::future::Future;
+use std::fmt::Debug;
+use std::future::{Future, IntoFuture};
 use std::marker::PhantomData;
 use std::ops::{Sub};
 use std::pin::Pin;
@@ -52,30 +53,45 @@ A task suitable for spawning.
 Executors convert [Task] into this type in order to poll the future.
 */
 #[derive(Debug)]
-pub struct SpawnedTask<F,ONotifier,ENotifier> where F: Future {
-    task: Task<F,ONotifier>,
+pub struct SpawnedTask<F,ONotifier,Executor> where F: Future {
+    task: TaskLocalImmutableFuture<Box<(dyn SomeExecutor<ExecutorNotifier = Box<(dyn ExecutorNotified + 'static)>> + 'static)>, TaskLocalImmutableFuture<TaskID, TaskLocalImmutableFuture<InFlightTaskCancellation, TaskLocalImmutableFuture<priority::Priority, TaskLocalImmutableFuture<String, F>>>>>,
     sender: ObserverSender<F::Output,ONotifier>,
-    phantom: std::marker::PhantomData<ENotifier>
+    phantom: PhantomData<Executor>,
+    poll_after: std::time::Instant,
+    hint: Hint,
 }
 
+
 impl<F: Future, ONotifier,ENotifier> SpawnedTask<F,ONotifier,ENotifier> {
-    /**
-    Access the underlying task.
-*/
-    pub fn task(&self) -> &Task<F,ONotifier> {
-        &self.task
+
+    pub fn hint(&self) -> Hint {
+        self.hint
     }
 
-    /**
-    Access the underlying task.
-*/
-    pub fn task_mut(&mut self) -> &mut Task<F,ONotifier> {
-        &mut self.task
+    pub fn label(&self) -> String {
+        self.task.get_future().get_future().get_future().get_future().get_val(|label| label.clone())
     }
 
-    pub fn into_task(self) -> Task<F,ONotifier> {
-        self.task
+    pub fn priority(&self) -> priority::Priority {
+        self.task.get_future().get_future().get_future().get_val(|priority| *priority)
     }
+
+    pub(crate) fn task_cancellation(&self) -> InFlightTaskCancellation {
+        self.task.get_future().get_future().get_val(|cancellation| cancellation.clone())
+    }
+
+    pub fn poll_after(&self) -> std::time::Instant {
+        self.poll_after
+    }
+
+    pub fn task_id(&self) -> TaskID {
+        self.task.get_future().get_val(|task_id| *task_id)
+    }
+
+    pub fn into_future(self) -> F {
+        self.task.into_future().into_future().into_future().into_future().into_future()
+    }
+
 
 }
 /**
@@ -186,10 +202,13 @@ impl<F: Future,N> Task<F,N> {
         let cancellation = self.task_cancellation();
         let task_id = self.task_id();
         let (sender, receiver) = observer_channel(self.notifier.take(),executor.executor_notifier(),cancellation,task_id);
+        let scoped = TASK_EXECUTOR.scope_internal(executor.clone_box(), self.future);
         let spawned_task = SpawnedTask {
-            task: self,
+            task: scoped,
             sender,
-            phantom: PhantomData
+            phantom: PhantomData,
+            poll_after: self.poll_after,
+            hint: self.hint,
         };
         (spawned_task, receiver)
     }
@@ -201,11 +220,11 @@ impl<F,ONotifier,ENotifier> Future for SpawnedTask<F,ONotifier,ENotifier> where 
     type Output = ();
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        assert!(self.task.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
+        assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
         let (future,sender) = unsafe {
             let unchecked = self.get_unchecked_mut();
-            let future = Pin::new_unchecked(&mut unchecked.task.future);
+            let future = Pin::new_unchecked(&mut unchecked.task);
             let sender = Pin::new_unchecked(&mut unchecked.sender);
             (future,sender)
         };
@@ -387,13 +406,13 @@ Analogously, for spawned task...
 
 impl<F: Future> AsRef<F> for SpawnedTask<F,NoNotified,NoNotified> {
     fn as_ref(&self) -> &F {
-        self.task().as_ref()
+        self.task.get_future().get_future().get_future().get_future().get_future()
     }
 }
 
 impl<F: Future> AsMut<F> for SpawnedTask<F,NoNotified,NoNotified> {
     fn as_mut(&mut self) -> &mut F {
-        self.task_mut().as_mut()
+        self.task.get_future_mut().get_future_mut().get_future_mut().get_future_mut().get_future_mut()
     }
 }
 

@@ -37,6 +37,7 @@ pub mod observer;
 pub type Priority = priority::Priority;
 
 use std::any::Any;
+use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
 use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
@@ -150,6 +151,12 @@ pub trait LocalExecutor: SomeExecutor {
 The appropriate type for a dynamically-dispatched executor.
 */
 pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>;
+
+impl Debug for DynExecutor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DynExecutor")
+    }
+}
 
 pub type DynONotifier = dyn ObserverNotified<Box<dyn Any>>;
 
