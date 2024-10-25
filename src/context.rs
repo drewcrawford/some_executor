@@ -408,6 +408,7 @@ boilerplates
 LocalKey - underlying doesn't support clone.  This eliminates copy,eq,ord,default,etc.
 from/into does not make a lot of sense, neither does asref/deref
 Looks like send/sync/unpin ought to carry through
+drop is sort of specious for static types
  */
 
 #[cfg(test)] mod tests {
