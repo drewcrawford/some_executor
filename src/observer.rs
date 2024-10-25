@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use crate::task::TaskID;
 
 #[derive(Debug)]
@@ -26,22 +27,37 @@ pub enum Observation<T> {
 struct Shared<T> {
     //for now, we implement this with a mutex
     lock: std::sync::Mutex<Observation<T>>,
+    /**
+    Indicates the observer was dropped without detach.
+    */
+    observer_cancelled: AtomicBool,
 }
 
 
 /**
 Observes information about a task.
+
+Dropping the observer requests cancellation.
+
+To detach instead, use [crate::task::Task::detach].
 */
+#[must_use]
 #[derive(Debug)]
 pub struct Observer<T,ENotifier: ExecutorNotified> {
     shared: Arc<Shared<T>>,
     task_id: TaskID,
     notifier: Option<ENotifier>,
+    detached: bool,
 }
+
+
 
 impl<T,ENotifier: ExecutorNotified> Drop for Observer<T,ENotifier> {
     fn drop(&mut self) {
-        self.notifier.as_mut().map(|n| n.request_cancel());
+        if !self.detached {
+            self.shared.observer_cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+            self.notifier.take().map(|mut n| n.request_cancel());
+        }
     }
 }
 
@@ -69,6 +85,10 @@ impl<T,Notifier> ObserverSender<T,Notifier> {
                 panic!("Observer cancelled");
             }
         }
+    }
+
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.shared.observer_cancelled.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -116,6 +136,14 @@ impl<T,E: ExecutorNotified> Observer<T,E> {
 */
     pub fn task_id(&self) -> &TaskID {
         &self.task_id
+    }
+
+    /**
+    Detaches from the active task, allowing it to continue running indefinitely.
+    */
+    pub fn detach(&mut self) {
+        self.notifier.take();
+        self.detached = true;
     }
 }
 
@@ -166,8 +194,8 @@ impl ExecutorNotified for NoNotified {
 }
 
 pub(crate) fn observer_channel<R,ONotifier,ENotifier: ExecutorNotified>(observer_notify: Option<ONotifier>, executor_notify: Option<ENotifier>, task_id: TaskID) -> (ObserverSender<R,ONotifier>, Observer<R,ENotifier>) {
-    let shared = Arc::new(Shared { lock: std::sync::Mutex::new(Observation::Pending) });
-    (ObserverSender {shared: shared.clone(), notifier: observer_notify}, Observer {shared, task_id, notifier: executor_notify})
+    let shared = Arc::new(Shared { lock: std::sync::Mutex::new(Observation::Pending), observer_cancelled: AtomicBool::new(false)});
+    (ObserverSender {shared: shared.clone(), notifier: observer_notify}, Observer {shared, task_id, notifier: executor_notify, detached: false})
 }
 
 

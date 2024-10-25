@@ -153,6 +153,9 @@ impl<F,ONotifier,ENotifier> Future for SpawnedTask<F,ONotifier,ENotifier> where 
             (future,sender)
         };
 
+        if sender.is_cancelled() {
+            return Poll::Ready(());
+        }
         match future.poll(cx) {
             Poll::Ready(r) => {
 
