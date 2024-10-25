@@ -6,20 +6,22 @@
 Rust made the terrible mistake of not having a batteries-included async executor.  And worse: there is
 not even a standard trait (interface) that executors ought to implement.
 
-The result is that libraries that want to be executor-agnostic and coded against 'some executor' are in a rough place.  Often they wind
-up coding 'to [tokio](https://tokio.rs)' directly, which is a fine runtime but maybe downstream crates
-wanted a different one.  Or, they can code to an interface like [agnostic](https://docs.rs/agnostic/latest/agnostic/index.html),
-but that is suspiciously large and somehow depends on tokio, which motivates the 'lite version' [agnostic-lite](https://crates.io/crates/agnostic-lite),
-which somehow still has 50 lines of features for tokio, smol, async-io, sleep, time, etc.
+There are a lot of opinions about what 'standard async rust' ought to be.  This crate is my opinion.
 
-Anyway, this crate's one and *only* job is to define an obvious and minimal API trait (façade) that libraries can consume to
-spawn their task on 'some' async executor.  Implementing that API for any given executor is trivial, however to keep the
-crate small this exercise is left to that executor, a third-party crate consuming both APIs, or to the reader.
+This crate does 3 simple jobs for 3 simple customers:
 
-The crate implements both a trait suitable for generic code with zero-cost abstraction, and an object-safe trait suitable for
-dynamic dispatch.
+1.  For those *spawning tasks*, the crate provides a simple, obvious API for spawning tasks onto an unknown executor.
+2.  For those *implementing executors*, this crate provides a simple, obvious API to receive tasks.
+3.  For those *writing async code*, this crate provides a variety of nice abstractions that are portable across executors and do not depend on tokio.
 
-This crate also defines a 'global' executor, suitable for 'get' by library code and 'set' by application code.
+# For those spawning tasks
+
+Here are your options:
+
+1.  The [SomeExecutorExt] trait provides an interface to spawn onto an executor.  You can take it as a generic argument.
+2.  The [LocalExecutorExt] trait provides an interface to spawn onto a thread-local executor.  This is useful in case you have a future that is `!Send`.  You can take it as a generic argument.
+3.  The object-safe versions, [SomeExecutor] and [LocalExecutor], in case you want to store them in a struct by erasing their type.  This has the usual tradeoffs around boxing types.
+4.  Task-local versions of the above.
 
 # Development status
 
@@ -73,7 +75,7 @@ pub trait SomeExecutor: Send + 'static + Sync {
     # Implementation notes
     Implementations should generally ensure that a dlog-context is available to the future.
     */
-    fn spawn<F: Future + Send + 'static, Notifier>(&mut self, task: Task<F>, notifier: Option<Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized;
+    fn spawn<F: Future + Send + 'static, Notifier: Send + 'static>(&mut self, task: Task<F,Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized;
 
 
     /**
@@ -81,7 +83,7 @@ pub trait SomeExecutor: Send + 'static + Sync {
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
 */
-    fn spawn_async<F: Future + Send + 'static,Notifier>(&mut self, task: Task<F>, notifier: Option<Notifier>) -> impl Future<Output=Observer<F::Output,Self::ExecutorNotifier>> + Send + 'static where Self: Sized;
+    fn spawn_async<F: Future + Send + 'static,Notifier: Send + 'static>(&mut self, task: Task<F,Notifier>) -> impl Future<Output=Observer<F::Output,Self::ExecutorNotifier>> + Send + 'static where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
@@ -90,7 +92,7 @@ pub trait SomeExecutor: Send + 'static + Sync {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>> + 'static + Send> >>, notifier: Option<Box<dyn ObserverNotified<Box<dyn Any>>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>;
+    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>> + 'static + Send>>,Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>;
 
     /**
     Clones the executor.
@@ -120,14 +122,14 @@ pub trait LocalExecutor: SomeExecutor {
     - `task`: The task to spawn.
 
     */
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F>, notifier: Option<Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized;
+    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
     */
-    fn spawn_local_async<F: Future,Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F>, notifier: Option<Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>> + Send + 'static where Self: Sized;
+    fn spawn_local_async<F: Future,Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>> + Send + 'static where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
@@ -136,13 +138,15 @@ pub trait LocalExecutor: SomeExecutor {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>>, notifier: Option<Box<dyn ObserverNotified<Box<dyn Any>>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>;
+    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>,Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>;
 }
 
 /**
 The appropriate type for a dynamically-dispatched executor.
 */
 pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>;
+
+pub type DynONotifier = dyn ObserverNotified<Box<dyn Any>>;
 
 /**
 A non-objsafe descendant of [LocalExecutor].

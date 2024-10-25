@@ -37,8 +37,8 @@ pub fn set_global_runtime(runtime: Box<DynExecutor>) {
             let task = Task::new_objsafe("test".into(), Box::new(async {
                 Box::new(()) as Box<dyn Any>
                 // todo!()
-            }), configuration);
-            runtime.spawn_objsafe(task, None);
+            }), configuration, None);
+            runtime.spawn_objsafe(task);
         }
     }
 }
