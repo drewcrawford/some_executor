@@ -178,8 +178,10 @@ possible designs:
 1.  Use immutable references to the notifier.  But notifiers may want to have some mutable state,
     forcing them to figure out interior mutability and synchronization
 2.  Require Unpin, allowing the type to be moved into the future.  This is the design we have chosen.
+
+We need Send because the ObserNotified is part of the task, which can be moved to another thread.
 */
-pub trait ObserverNotified<T>: Unpin {
+pub trait ObserverNotified<T>: Unpin + Send {
 
     /**
     This function will be run inline when the task completes.
