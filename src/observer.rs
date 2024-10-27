@@ -243,6 +243,15 @@ impl ExecutorNotified for Box<dyn ExecutorNotified> {
     }
 }
 
+/*
+I don't really get why we need both of these... but we do!
+ */
+impl ExecutorNotified for Box<dyn ExecutorNotified + Send> {
+    fn request_cancel(&mut self) {
+        (**self).request_cancel();
+    }
+}
+
 /**
 Allow a Box<DynONotifier> to be used as an ObserverNotified directly.
 */
