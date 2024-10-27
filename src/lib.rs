@@ -146,7 +146,8 @@ pub trait SomeExecutorExt: SomeExecutor + Clone {
 /**
 A trait for executors that can spawn tasks onto the local thread.
 */
-pub trait SomeLocalExecutor: SomeExecutor {
+pub trait SomeLocalExecutor {
+    type ExecutorNotifier: ExecutorNotified;
     /**
     Spawns a future onto the runtime.
 
@@ -173,6 +174,9 @@ pub trait SomeLocalExecutor: SomeExecutor {
     fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>,Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>;
 
     fn clone_local_box(&self) -> Box<DynLocalExecutor>;
+
+    fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
+
 }
 
 /**

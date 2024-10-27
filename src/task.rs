@@ -56,7 +56,7 @@ Executors convert [Task] into this type in order to poll the future.
 */
 #[derive(Debug)]
 pub struct SpawnedTask<F,ONotifier,Executor> where F: Future {
-    task: TaskLocalImmutableFuture<Option<Box<DynLocalExecutor>>, TaskLocalImmutableFuture<Box<DynExecutor>, TaskLocalImmutableFuture<TaskID, TaskLocalImmutableFuture<InFlightTaskCancellation, TaskLocalImmutableFuture<priority::Priority, TaskLocalImmutableFuture<String, F>>>>>>,
+    task: TaskLocalImmutableFuture<Option<Box<DynExecutor>>, TaskLocalImmutableFuture<TaskID, TaskLocalImmutableFuture<InFlightTaskCancellation, TaskLocalImmutableFuture<priority::Priority, TaskLocalImmutableFuture<String, F>>>>>,
     sender: ObserverSender<F::Output,ONotifier>,
     phantom: PhantomData<Executor>,
     poll_after: std::time::Instant,
@@ -71,11 +71,11 @@ impl<F: Future, ONotifier,ENotifier> SpawnedTask<F,ONotifier,ENotifier> {
     }
 
     pub fn label(&self) -> String {
-        self.task.get_future().get_future().get_future().get_future().get_future().get_val(|label| label.clone())
+        self.task.get_future().get_future().get_future().get_future().get_val(|label| label.clone())
     }
 
     pub fn priority(&self) -> priority::Priority {
-        self.task.get_future().get_future().get_future().get_future().get_val(|priority| *priority)
+        self.task.get_future().get_future().get_future().get_val(|priority| *priority)
     }
 
     // pub(crate) fn task_cancellation(&self) -> InFlightTaskCancellation {
@@ -87,11 +87,11 @@ impl<F: Future, ONotifier,ENotifier> SpawnedTask<F,ONotifier,ENotifier> {
     }
 
     pub fn task_id(&self) -> TaskID {
-        self.task.get_future().get_future().get_val(|task_id| *task_id)
+        self.task.get_future().get_val(|task_id| *task_id)
     }
 
     pub fn into_future(self) -> F {
-        self.task.into_future().into_future().into_future().into_future().into_future().into_future()
+        self.task.into_future().into_future().into_future().into_future().into_future()
     }
 
 
@@ -151,12 +151,11 @@ task_local! {
     /**
     Provides an executor local to the current task.
 */
-    pub static const TASK_EXECUTOR: Box<DynExecutor>;
+    pub static const TASK_EXECUTOR: Option<Box<DynExecutor>>;
+}
 
-    /**
-    Provides a local executor for the current task.
-    */
-    pub static const TASK_LOCAL_EXECUTOR: Option<Box<DynLocalExecutor>>;
+thread_local! {
+    pub static TASK_LOCAL_EXECUTOR: Option<Box<DynLocalExecutor>> = None;
 }
 
 impl<F: Future,N> Task<F,N> {
@@ -211,16 +210,37 @@ impl<F: Future,N> Task<F,N> {
     When using this method, the TASK_LOCAL_EXECUTOR will be set to None.
     To spawn a task onto a local executor instead, use [Task::spawn_local].
 */
-    pub fn spawn<Executor: SomeExecutor>(self,executor: &mut Executor) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
-        Self::__spawn(self,executor,None)
+    pub fn spawn<Executor: SomeExecutor>(mut self,executor: &mut Executor) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
+        let cancellation = self.task_cancellation();
+        let task_id = self.task_id();
+        let (sender, receiver) = observer_channel(self.notifier.take(),executor.executor_notifier(),cancellation,task_id);
+        let scoped = TASK_EXECUTOR.scope_internal(Some(executor.clone_box()), self.future);
+        let spawned_task = SpawnedTask {
+            task: scoped,
+            sender,
+            phantom: PhantomData,
+            poll_after: self.poll_after,
+            hint: self.hint,
+        };
+        (spawned_task, receiver)
     }
 
     /**
     Spawns the task onto a local executor
     */
-    pub fn spawn_local<Executor: SomeLocalExecutor>(self, executor: &mut Executor) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
-        let local_executor = executor.clone_local_box();
-        Self::__spawn(self,executor,Some(local_executor))
+    pub fn spawn_local<Executor: SomeLocalExecutor>(mut self, executor: &mut Executor) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
+        let cancellation = self.task_cancellation();
+        let task_id = self.task_id();
+        let (sender, receiver) = observer_channel(self.notifier.take(),executor.executor_notifier(),cancellation,task_id);
+        let scoped = TASK_EXECUTOR.scope_internal(None, self.future);
+        let spawned_task = SpawnedTask {
+            task: scoped,
+            sender,
+            phantom: PhantomData,
+            poll_after: self.poll_after,
+            hint: self.hint,
+        };
+        (spawned_task, receiver)
     }
 
     pub fn spawn_objsafe(mut self, executor: &mut DynExecutor) -> (SpawnedTask<F,N,Box<dyn ExecutorNotified + Send>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
@@ -228,8 +248,7 @@ impl<F: Future,N> Task<F,N> {
         let task_id = self.task_id();
         let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified + Send>);
         let (sender, receiver) = observer_channel(self.notifier.take(),boxed_executor_notifier,cancellation,task_id);
-        let scoped_1 = TASK_EXECUTOR.scope_internal(executor.clone_box(), self.future);
-        let scoped = TASK_LOCAL_EXECUTOR.scope_internal(None, scoped_1);
+        let scoped = TASK_EXECUTOR.scope_internal(Some(executor.clone_box()), self.future);
         let spawned_task = SpawnedTask {
             task: scoped,
             sender,
@@ -240,21 +259,6 @@ impl<F: Future,N> Task<F,N> {
         (spawned_task, receiver)
     }
 
-    fn __spawn<Executor: SomeExecutor>(mut self,executor: &mut Executor, local_executor: Option<Box<DynLocalExecutor>>) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
-        let cancellation = self.task_cancellation();
-        let task_id = self.task_id();
-        let (sender, receiver) = observer_channel(self.notifier.take(),executor.executor_notifier(),cancellation,task_id);
-        let scoped_1 = TASK_EXECUTOR.scope_internal(executor.clone_box(), self.future);
-        let scoped = TASK_LOCAL_EXECUTOR.scope_internal(local_executor, scoped_1);
-        let spawned_task = SpawnedTask {
-            task: scoped,
-            sender,
-            phantom: PhantomData,
-            poll_after: self.poll_after,
-            hint: self.hint,
-        };
-        (spawned_task, receiver)
-    }
 
 }
 
@@ -449,13 +453,13 @@ Analogously, for spawned task...
 
 impl<F: Future> AsRef<F> for SpawnedTask<F,NoNotified,NoNotified> {
     fn as_ref(&self) -> &F {
-        self.task.get_future().get_future().get_future().get_future().get_future().get_future()
+        self.task.get_future().get_future().get_future().get_future().get_future()
     }
 }
 
 impl<F: Future> AsMut<F> for SpawnedTask<F,NoNotified,NoNotified> {
     fn as_mut(&mut self) -> &mut F {
-        self.task.get_future_mut().get_future_mut().get_future_mut().get_future_mut().get_future_mut().get_future_mut()
+        self.task.get_future_mut().get_future_mut().get_future_mut().get_future_mut().get_future_mut()
     }
 }
 
