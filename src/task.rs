@@ -9,7 +9,7 @@ use std::ops::{Sub};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::task::Poll;
+use std::task::{Context, Poll};
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
@@ -468,13 +468,10 @@ impl Configuration {
 }
 
 //dyn traits
-pub trait DynLocalSpawnedTask: Future {
-
+pub trait DynLocalSpawnedTask: Future<Output=()> {
 }
 
-impl<F: Future,ONotifier,Executor> DynLocalSpawnedTask for SpawnedLocalTask<F,ONotifier,Executor> where ONotifier: ObserverNotified<F::Output> {
 
-}
 
 /* boilerplates
 
