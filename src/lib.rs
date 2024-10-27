@@ -192,7 +192,7 @@ impl Debug for DynLocalExecutor {
     }
 }
 
-pub type DynONotifier = dyn ObserverNotified<Box<dyn Any>>;
+pub type DynONotifier = dyn ObserverNotified<Box<dyn Any + Send>>;
 
 /**
 A non-objsafe descendant of [SomeLocalExecutor].

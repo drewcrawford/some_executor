@@ -42,7 +42,7 @@ pub fn set_global_executor(runtime: Box<DynExecutor>) {
             //get a Box<dyn Any>
 
             let task = Task::new_objsafe("test".into(), Box::new(async {
-                Box::new(()) as Box<dyn Any>
+                Box::new(()) as Box<dyn Any + Send + 'static>
                 // todo!()
             }), configuration, None);
             runtime.spawn_objsafe(task);

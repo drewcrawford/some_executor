@@ -274,8 +274,8 @@ impl<F,ONotifier,ENotifier> Future for SpawnedTask<F,ONotifier,ENotifier> where 
     }
 }
 
-impl Task<Pin<Box<dyn Future<Output=Box<dyn Any>> + Send + 'static>>,Box<DynONotifier>> {
-    pub fn new_objsafe(label: String, future: Box<dyn Future<Output=Box<dyn Any>> + Send + 'static>, configuration: Configuration, notifier: Option<Box<DynONotifier>>) -> Self {
+impl Task<Pin<Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>>,Box<DynONotifier>> {
+    pub fn new_objsafe(label: String, future: Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>, configuration: Configuration, notifier: Option<Box<DynONotifier>>) -> Self {
         Self::new(label, Box::into_pin(future), configuration, notifier)
     }
 }
