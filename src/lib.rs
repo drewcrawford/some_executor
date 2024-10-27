@@ -162,7 +162,7 @@ pub trait SomeLocalExecutor<'tasks> {
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
     */
-    fn spawn_local_async<F: Future + 'tasks,Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>> + Send + 'static where Self: Sized;
+    fn spawn_local_async<F: Future + 'tasks,Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>> where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
