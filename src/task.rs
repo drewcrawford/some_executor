@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::task::Poll;
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
-use crate::observer::{observer_channel, NoNotified, Observer, ObserverNotified, ObserverSender};
+use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
 use crate::{task_local, DynExecutor, DynLocalExecutor, DynONotifier, SomeLocalExecutor, Priority, SomeExecutor};
 
 /**
@@ -221,6 +221,23 @@ impl<F: Future,N> Task<F,N> {
     pub fn spawn_local<Executor: SomeLocalExecutor>(self, executor: &mut Executor) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
         let local_executor = executor.clone_local_box();
         Self::__spawn(self,executor,Some(local_executor))
+    }
+
+    pub fn spawn_objsafe(mut self, executor: &mut DynExecutor) -> (SpawnedTask<F,N,Box<dyn ExecutorNotified>>, Observer<F::Output, Box<dyn ExecutorNotified>>) {
+        let cancellation = self.task_cancellation();
+        let task_id = self.task_id();
+        let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified>);
+        let (sender, receiver) = observer_channel(self.notifier.take(),boxed_executor_notifier,cancellation,task_id);
+        let scoped_1 = TASK_EXECUTOR.scope_internal(executor.clone_box(), self.future);
+        let scoped = TASK_LOCAL_EXECUTOR.scope_internal(None, scoped_1);
+        let spawned_task = SpawnedTask {
+            task: scoped,
+            sender,
+            phantom: PhantomData,
+            poll_after: self.poll_after,
+            hint: self.hint,
+        };
+        (spawned_task, receiver)
     }
 
     fn __spawn<Executor: SomeExecutor>(mut self,executor: &mut Executor, local_executor: Option<Box<DynLocalExecutor>>) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
