@@ -467,6 +467,15 @@ impl Configuration {
     }
 }
 
+//dyn traits
+pub trait DynLocalSpawnedTask: Future {
+
+}
+
+impl<F: Future,ONotifier,Executor> DynLocalSpawnedTask for SpawnedLocalTask<F,ONotifier,Executor> where ONotifier: ObserverNotified<F::Output> {
+
+}
+
 /* boilerplates
 
 configuration - default
