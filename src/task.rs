@@ -223,7 +223,7 @@ impl<F: Future,N> Task<F,N> {
         Self::__spawn(self,executor,Some(local_executor))
     }
 
-    pub fn spawn_objsafe(mut self, executor: &mut DynExecutor) -> (SpawnedTask<F,N,Box<dyn ExecutorNotified>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
+    pub fn spawn_objsafe(mut self, executor: &mut DynExecutor) -> (SpawnedTask<F,N,Box<dyn ExecutorNotified + Send>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
         let cancellation = self.task_cancellation();
         let task_id = self.task_id();
         let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified + Send>);
