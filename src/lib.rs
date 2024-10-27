@@ -33,7 +33,8 @@ pub mod global_executor;
 pub mod hint;
 pub mod context;
 pub mod observer;
-mod thread_executor;
+pub mod thread_executor;
+pub mod current_executor;
 
 pub type Priority = priority::Priority;
 
@@ -146,6 +147,8 @@ pub trait LocalExecutor: SomeExecutor {
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
     fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>,Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>;
+
+    fn clone_local_box(&self) -> Box<dyn LocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>;
 }
 
 /**
@@ -156,6 +159,12 @@ pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier = Box<dyn ExecutorNotif
 impl Debug for DynExecutor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("DynExecutor")
+    }
+}
+
+impl Debug for DynLocalExecutor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DynLocalExecutor")
     }
 }
 

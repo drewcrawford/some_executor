@@ -1,6 +1,6 @@
 use std::any::Any;
 use std::fmt::Debug;
-use std::future::{Future, IntoFuture};
+use std::future::{Future};
 use std::marker::PhantomData;
 use std::ops::{Sub};
 use std::pin::Pin;
@@ -10,7 +10,7 @@ use std::task::Poll;
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
-use crate::{task_local, DynExecutor, DynONotifier, Priority, SomeExecutor};
+use crate::{task_local, DynExecutor, DynLocalExecutor, DynONotifier, LocalExecutor, Priority, SomeExecutor};
 
 /**
 A task identifier.
@@ -54,7 +54,7 @@ Executors convert [Task] into this type in order to poll the future.
 */
 #[derive(Debug)]
 pub struct SpawnedTask<F,ONotifier,Executor> where F: Future {
-    task: TaskLocalImmutableFuture<Box<(dyn SomeExecutor<ExecutorNotifier = Box<(dyn ExecutorNotified + 'static)>> + 'static)>, TaskLocalImmutableFuture<TaskID, TaskLocalImmutableFuture<InFlightTaskCancellation, TaskLocalImmutableFuture<priority::Priority, TaskLocalImmutableFuture<String, F>>>>>,
+    task: TaskLocalImmutableFuture<Option<Box<dyn LocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>>, TaskLocalImmutableFuture<Box<(dyn SomeExecutor<ExecutorNotifier = Box<(dyn ExecutorNotified + 'static)>> + 'static)>, TaskLocalImmutableFuture<TaskID, TaskLocalImmutableFuture<InFlightTaskCancellation, TaskLocalImmutableFuture<priority::Priority, TaskLocalImmutableFuture<String, F>>>>>>,
     sender: ObserverSender<F::Output,ONotifier>,
     phantom: PhantomData<Executor>,
     poll_after: std::time::Instant,
@@ -69,27 +69,27 @@ impl<F: Future, ONotifier,ENotifier> SpawnedTask<F,ONotifier,ENotifier> {
     }
 
     pub fn label(&self) -> String {
-        self.task.get_future().get_future().get_future().get_future().get_val(|label| label.clone())
+        self.task.get_future().get_future().get_future().get_future().get_future().get_val(|label| label.clone())
     }
 
     pub fn priority(&self) -> priority::Priority {
-        self.task.get_future().get_future().get_future().get_val(|priority| *priority)
+        self.task.get_future().get_future().get_future().get_future().get_val(|priority| *priority)
     }
 
-    pub(crate) fn task_cancellation(&self) -> InFlightTaskCancellation {
-        self.task.get_future().get_future().get_val(|cancellation| cancellation.clone())
-    }
+    // pub(crate) fn task_cancellation(&self) -> InFlightTaskCancellation {
+    //     self.task.get_future().get_future().get_val(|cancellation| cancellation.clone())
+    // }
 
     pub fn poll_after(&self) -> std::time::Instant {
         self.poll_after
     }
 
     pub fn task_id(&self) -> TaskID {
-        self.task.get_future().get_val(|task_id| *task_id)
+        self.task.get_future().get_future().get_val(|task_id| *task_id)
     }
 
     pub fn into_future(self) -> F {
-        self.task.into_future().into_future().into_future().into_future().into_future()
+        self.task.into_future().into_future().into_future().into_future().into_future().into_future()
     }
 
 
@@ -150,6 +150,11 @@ task_local! {
     Provides an executor local to the current task.
 */
     pub static const TASK_EXECUTOR: Box<DynExecutor>;
+
+    /**
+    Provides a local executor for the current task.
+    */
+    pub static const TASK_LOCAL_EXECUTOR: Option<Box<DynLocalExecutor>>;
 }
 
 impl<F: Future,N> Task<F,N> {
@@ -198,11 +203,30 @@ impl<F: Future,N> Task<F,N> {
         self.future.into_future().into_future().into_future().into_future()
     }
 
-    pub fn spawn<Executor: SomeExecutor>(mut self,executor: &mut Executor) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
+    /**
+    Spawns the task onto the executor.
+
+    When using this method, the TASK_LOCAL_EXECUTOR will be set to None.
+    To spawn a task onto a local executor instead, use [Task::spawn_local].
+*/
+    pub fn spawn<Executor: SomeExecutor>(self,executor: &mut Executor) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
+        Self::__spawn(self,executor,None)
+    }
+
+    /**
+    Spawns the task onto a local executor
+    */
+    pub fn spawn_local<Executor: LocalExecutor>(mut self,executor: &mut Executor) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
+        let local_executor = executor.clone_local_box();
+        Self::__spawn(self,executor,Some(local_executor))
+    }
+
+    fn __spawn<Executor: SomeExecutor>(mut self,executor: &mut Executor, local_executor: Option<Box<DynLocalExecutor>>) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
         let cancellation = self.task_cancellation();
         let task_id = self.task_id();
         let (sender, receiver) = observer_channel(self.notifier.take(),executor.executor_notifier(),cancellation,task_id);
-        let scoped = TASK_EXECUTOR.scope_internal(executor.clone_box(), self.future);
+        let scoped_1 = TASK_EXECUTOR.scope_internal(executor.clone_box(), self.future);
+        let scoped = TASK_LOCAL_EXECUTOR.scope_internal(local_executor, scoped_1);
         let spawned_task = SpawnedTask {
             task: scoped,
             sender,
@@ -406,13 +430,13 @@ Analogously, for spawned task...
 
 impl<F: Future> AsRef<F> for SpawnedTask<F,NoNotified,NoNotified> {
     fn as_ref(&self) -> &F {
-        self.task.get_future().get_future().get_future().get_future().get_future()
+        self.task.get_future().get_future().get_future().get_future().get_future().get_future()
     }
 }
 
 impl<F: Future> AsMut<F> for SpawnedTask<F,NoNotified,NoNotified> {
     fn as_mut(&mut self) -> &mut F {
-        self.task.get_future_mut().get_future_mut().get_future_mut().get_future_mut().get_future_mut()
+        self.task.get_future_mut().get_future_mut().get_future_mut().get_future_mut().get_future_mut().get_future_mut()
     }
 }
 

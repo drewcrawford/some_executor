@@ -3,6 +3,7 @@ Provides a context type that can be used to query the current task.
 */
 
 use std::cell::RefCell;
+use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
