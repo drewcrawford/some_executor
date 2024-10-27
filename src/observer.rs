@@ -181,7 +181,7 @@ possible designs:
 
 We need Send because the ObserNotified is part of the task, which can be moved to another thread.
 */
-pub trait ObserverNotified<T>: Unpin + Send {
+pub trait ObserverNotified<T>: Unpin + Send + 'static {
 
     /**
     This function will be run inline when the task completes.
