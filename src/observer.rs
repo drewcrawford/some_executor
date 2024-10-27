@@ -1,7 +1,9 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
+use std::any::Any;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use crate::DynONotifier;
 use crate::task::{InFlightTaskCancellation, TaskID};
 
 #[derive(Debug)]
@@ -241,6 +243,14 @@ impl ExecutorNotified for Box<dyn ExecutorNotified> {
     }
 }
 
+/**
+Allow a Box<DynONotifier> to be used as an ObserverNotified directly.
+*/
+impl ObserverNotified<Box<(dyn Any + 'static)>> for Box<DynONotifier> {
+    fn notify(&mut self, value: &Box<(dyn Any + 'static)>) {
+        (**self).notify(value);
+    }
+}
 
 /*
 boilerplates
