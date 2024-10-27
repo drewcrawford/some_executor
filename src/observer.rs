@@ -246,8 +246,8 @@ impl ExecutorNotified for Box<dyn ExecutorNotified> {
 /**
 Allow a Box<DynONotifier> to be used as an ObserverNotified directly.
 */
-impl ObserverNotified<Box<(dyn Any + 'static)>> for Box<DynONotifier> {
-    fn notify(&mut self, value: &Box<(dyn Any + 'static)>) {
+impl ObserverNotified<Box<(dyn Any)>> for Box<DynONotifier> {
+    fn notify(&mut self, value: &Box<(dyn Any)>) {
         (**self).notify(value);
     }
 }

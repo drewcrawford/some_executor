@@ -550,10 +550,9 @@ impl Into<bool> for InFlightTaskCancellation {
                 async { todo!() }
             }
 
-            fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>> + 'static + Send>>, Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
+            fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<DynONotifier>>) -> Observer<Box<dyn Any + 'static + Send>, Box<dyn ExecutorNotified>> {
                 todo!()
             }
-
             fn clone_box(&self) -> Box<DynExecutor> {
                 todo!()
             }
