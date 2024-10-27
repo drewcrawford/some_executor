@@ -1,6 +1,7 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
 use std::any::Any;
+use std::cell::RefCell;
 use std::fmt::Debug;
 use std::future::{Future};
 use std::marker::PhantomData;
@@ -72,9 +73,11 @@ Executors convert [Task] into this type in order to poll the future.
 pub struct SpawnedLocalTask<F,ONotifier,Executor> where F: Future {
     task: TaskLocalImmutableFuture<Option<Box<DynExecutor>>, TaskLocalImmutableFuture<TaskID, TaskLocalImmutableFuture<InFlightTaskCancellation, TaskLocalImmutableFuture<priority::Priority, TaskLocalImmutableFuture<String, F>>>>>,
     sender: ObserverSender<F::Output,ONotifier>,
-    phantom: PhantomData<Executor>,
     poll_after: std::time::Instant,
     hint: Hint,
+    phantom: PhantomData<Executor>,
+    //this slot is added and removed during poll
+    executor_set: Option<Box<DynLocalExecutor>>,
 }
 
 
@@ -198,7 +201,7 @@ task_local! {
 }
 
 thread_local! {
-    pub static TASK_LOCAL_EXECUTOR: Option<Box<DynLocalExecutor>> = None;
+    static TASK_LOCAL_EXECUTOR: RefCell<Option<Box<DynLocalExecutor>>> = RefCell::new(None);
 }
 
 impl<F: Future,N> Task<F,N> {
@@ -277,9 +280,10 @@ impl<F: Future,N> Task<F,N> {
         let (sender, receiver) = observer_channel(self.notifier.take(),executor.executor_notifier(),cancellation,task_id);
         let scoped = TASK_EXECUTOR.scope_internal(None, self.future);
         let spawned_task = SpawnedLocalTask {
+            phantom: PhantomData,
             task: scoped,
             sender,
-            phantom: PhantomData,
+            executor_set: Some(executor.clone_local_box()),
             poll_after: self.poll_after,
             hint: self.hint,
         };
@@ -335,6 +339,48 @@ impl<F,ONotifier,ENotifier> Future for SpawnedTask<F,ONotifier,ENotifier> where 
         }
 
 
+    }
+}
+
+impl <F, ONotifier, Executor> Future for SpawnedLocalTask<F,ONotifier,Executor> where F: Future, ONotifier: ObserverNotified<F::Output>
+{
+    type Output = ();
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
+        //destructure
+        let (future, sender,mut executor) = unsafe {
+            let unchecked = self.get_unchecked_mut();
+            let future = Pin::new_unchecked(&mut unchecked.task);
+            let sender = Pin::new_unchecked(&mut unchecked.sender);
+            let executor = Pin::new_unchecked(&mut unchecked.executor_set);
+            (future, sender,executor)
+        };
+
+        //set local executor
+        TASK_LOCAL_EXECUTOR.with(|e| {
+            *e.borrow_mut() = executor.take();
+        });
+
+        if sender.observer_cancelled() {
+            //we don't really need to notify the observer here.  Also the notifier will run upon drop.
+            return Poll::Ready(());
+        }
+        //perform poll
+        let f = future.poll(cx);
+        //clear local executor
+        TASK_LOCAL_EXECUTOR.with(|e| {
+            *executor = e.borrow_mut().take();
+        });
+        match f {
+            Poll::Ready(r) => {
+                sender.get_mut().send(r);
+                Poll::Ready(())
+            }
+            Poll::Pending => {
+                Poll::Pending
+            }
+        }
     }
 }
 
