@@ -5,7 +5,7 @@ use crate::{DynExecutor, DynLocalExecutor};
 
 thread_local! {
     static THREAD_EXECUTOR: RefCell<Option<Box<DynExecutor>>> = RefCell::new(None);
-    static THREAD_LOCAL_EXECUTOR: RefCell<Option<Box<DynLocalExecutor>>> = RefCell::new(None);
+    static THREAD_LOCAL_EXECUTOR: RefCell<Option<Box<DynLocalExecutor<'static>>>> = RefCell::new(None);
 }
 
 /**
@@ -38,7 +38,7 @@ pub fn thread_local_executor<R>(c: impl FnOnce(Option<&DynLocalExecutor>) -> R) 
 /**
 Sets the local executor for the current thread.
 */
-pub fn set_thread_local_executor(runtime: Box<DynLocalExecutor>) {
+pub fn set_thread_local_executor(runtime: Box<DynLocalExecutor<'static>>) {
     THREAD_LOCAL_EXECUTOR.with(|e| {
         *e.borrow_mut() = Some(runtime);
     });

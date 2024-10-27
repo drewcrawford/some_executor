@@ -190,7 +190,7 @@ impl Debug for DynExecutor {
     }
 }
 
-impl Debug for DynLocalExecutor {
+impl Debug for DynLocalExecutor<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("DynLocalExecutor")
     }
@@ -212,7 +212,7 @@ pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor<'tasks> + Clone {
 The appropriate type for a dynamically-dispatched local executor
 */
 
-pub type DynLocalExecutor = dyn for<'a> SomeLocalExecutor<'a, ExecutorNotifier = NoNotified>;
+pub type DynLocalExecutor<'executor> = dyn for<'a> SomeLocalExecutor<'a, ExecutorNotifier = NoNotified>;
 
 
 #[cfg(test)] mod tests {
