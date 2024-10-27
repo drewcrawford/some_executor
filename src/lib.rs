@@ -66,7 +66,7 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
-use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
+use crate::observer::{ExecutorNotified, NoNotified, Observer, ObserverNotified};
 use crate::task::Task;
 /*
 Design notes.
@@ -126,7 +126,7 @@ pub trait SomeExecutor: Send + 'static + Sync {
 
     The returned value will spawn tasks onto the same executor.
 */
-    fn clone_box(&self) -> Box<dyn SomeExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>;
+    fn clone_box(&self) -> Box<DynExecutor>;
 
     /**
     Produces an executor notifier.
@@ -172,13 +172,13 @@ pub trait SomeLocalExecutor: SomeExecutor {
     */
     fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>,Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>;
 
-    fn clone_local_box(&self) -> Box<dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>;
+    fn clone_local_box(&self) -> Box<DynLocalExecutor>;
 }
 
 /**
 The appropriate type for a dynamically-dispatched executor.
 */
-pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>;
+pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier = NoNotified>;
 
 impl Debug for DynExecutor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -208,7 +208,7 @@ pub trait LocalExecutorExt: SomeLocalExecutor + Clone {
 The appropriate type for a dynamically-dispatched local executor
 */
 
-pub type DynLocalExecutor = dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>;
+pub type DynLocalExecutor = dyn SomeLocalExecutor<ExecutorNotifier = NoNotified>;
 
 
 #[cfg(test)] mod tests {

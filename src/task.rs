@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::task::Poll;
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
-use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
+use crate::observer::{observer_channel, NoNotified, Observer, ObserverNotified, ObserverSender};
 use crate::{task_local, DynExecutor, DynLocalExecutor, DynONotifier, SomeLocalExecutor, Priority, SomeExecutor};
 
 /**
@@ -56,7 +56,7 @@ Executors convert [Task] into this type in order to poll the future.
 */
 #[derive(Debug)]
 pub struct SpawnedTask<F,ONotifier,Executor> where F: Future {
-    task: TaskLocalImmutableFuture<Option<Box<dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>>, TaskLocalImmutableFuture<Box<(dyn SomeExecutor<ExecutorNotifier = Box<(dyn ExecutorNotified + 'static)>> + 'static)>, TaskLocalImmutableFuture<TaskID, TaskLocalImmutableFuture<InFlightTaskCancellation, TaskLocalImmutableFuture<priority::Priority, TaskLocalImmutableFuture<String, F>>>>>>,
+    task: TaskLocalImmutableFuture<Option<Box<DynLocalExecutor>>, TaskLocalImmutableFuture<Box<DynExecutor>, TaskLocalImmutableFuture<TaskID, TaskLocalImmutableFuture<InFlightTaskCancellation, TaskLocalImmutableFuture<priority::Priority, TaskLocalImmutableFuture<String, F>>>>>>,
     sender: ObserverSender<F::Output,ONotifier>,
     phantom: PhantomData<Executor>,
     poll_after: std::time::Instant,
@@ -471,10 +471,12 @@ impl Into<bool> for InFlightTaskCancellation {
 
 
 #[cfg(test)] mod tests {
+    use std::any::Any;
     use std::future::Future;
-    use crate::observer::{NoNotified};
+    use std::pin::Pin;
+    use crate::observer::{ExecutorNotified, NoNotified, Observer, ObserverNotified};
     use crate::task::{SpawnedTask, Task};
-    use crate::{task_local, SomeExecutor};
+    use crate::{task_local, DynExecutor, DynONotifier, SomeExecutor};
     #[test] fn test_send() {
         task_local!(
             static FOO: u32;
@@ -525,7 +527,42 @@ impl Into<bool> for InFlightTaskCancellation {
             fn assert_unpin<T: Unpin>(_: T) {}
             assert_unpin(spawned);
         }
+    }
+    #[test] fn test_dyn_executor() {
+        struct ExExecutor;
+        #[allow(unused)]
+        impl SomeExecutor for ExExecutor {
+            type ExecutorNotifier = NoNotified;
 
+            fn spawn<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
+            where
+                Self: Sized,
+                F::Output: Send,
+            {
+                todo!()
+            }
 
+            fn spawn_async<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>> + Send + 'static
+            where
+                Self: Sized,
+                F::Output: Send,
+            {
+                async { todo!() }
+            }
+
+            fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>> + 'static + Send>>, Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
+                todo!()
+            }
+
+            fn clone_box(&self) -> Box<DynExecutor> {
+                todo!()
+            }
+
+            fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
+                todo!()
+            }
+        }
+
+        let _: Box<DynExecutor> = Box::new(ExExecutor);
     }
 }
