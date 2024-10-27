@@ -274,7 +274,7 @@ impl<F: Future,N> Task<F,N> {
     /**
     Spawns the task onto a local executor
     */
-    pub fn spawn_local<Executor: SomeLocalExecutor>(mut self, executor: &mut Executor) -> (SpawnedLocalTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
+    pub fn spawn_local<Executor: for<'a> SomeLocalExecutor<'a>>(mut self, executor: &mut Executor) -> (SpawnedLocalTask<F,N,<Executor as SomeLocalExecutor<'_>>::ExecutorNotifier>, Observer<F::Output,<Executor as SomeLocalExecutor<'_>>::ExecutorNotifier>) {
         let cancellation = self.task_cancellation();
         let task_id = self.task_id();
         let (sender, receiver) = observer_channel(self.notifier.take(),executor.executor_notifier(),cancellation,task_id);

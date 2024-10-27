@@ -146,7 +146,7 @@ pub trait SomeExecutorExt: SomeExecutor + Clone {
 /**
 A trait for executors that can spawn tasks onto the local thread.
 */
-pub trait SomeLocalExecutor {
+pub trait SomeLocalExecutor<'tasks> {
     type ExecutorNotifier: ExecutorNotified;
     /**
     Spawns a future onto the runtime.
@@ -155,14 +155,14 @@ pub trait SomeLocalExecutor {
     - `task`: The task to spawn.
 
     */
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized;
+    fn spawn_local<F: Future + 'tasks, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
     */
-    fn spawn_local_async<F: Future,Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>> + Send + 'static where Self: Sized;
+    fn spawn_local_async<F: Future + 'tasks,Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>> + Send + 'static where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
@@ -204,7 +204,7 @@ A non-objsafe descendant of [SomeLocalExecutor].
 This trait provides a more ergonomic interface, but is not object-safe.
 
 */
-pub trait LocalExecutorExt: SomeLocalExecutor + Clone {
+pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor<'tasks> + Clone {
 
 }
 
@@ -212,7 +212,7 @@ pub trait LocalExecutorExt: SomeLocalExecutor + Clone {
 The appropriate type for a dynamically-dispatched local executor
 */
 
-pub type DynLocalExecutor = dyn SomeLocalExecutor<ExecutorNotifier = NoNotified>;
+pub type DynLocalExecutor = dyn for<'a> SomeLocalExecutor<'a, ExecutorNotifier = NoNotified>;
 
 
 #[cfg(test)] mod tests {
