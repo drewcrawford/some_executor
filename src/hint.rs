@@ -1,3 +1,5 @@
+//SPDX-License-Identifier: MIT OR Apache-2.0
+
 /**
 A type that describes the expected runtime characteristics of the future.
 */

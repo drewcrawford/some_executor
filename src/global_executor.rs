@@ -1,5 +1,6 @@
 use std::sync::OnceLock;
 use crate::{DynExecutor};
+//SPDX-License-Identifier: MIT OR Apache-2.0
 
 static GLOBAL_RUNTIME: OnceLock<Box<DynExecutor>> = OnceLock::new();
 

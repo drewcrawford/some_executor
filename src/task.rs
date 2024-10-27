@@ -1,3 +1,5 @@
+//SPDX-License-Identifier: MIT OR Apache-2.0
+
 use std::any::Any;
 use std::fmt::Debug;
 use std::future::{Future};
@@ -10,7 +12,7 @@ use std::task::Poll;
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
-use crate::{task_local, DynExecutor, DynLocalExecutor, DynONotifier, LocalExecutor, Priority, SomeExecutor};
+use crate::{task_local, DynExecutor, DynLocalExecutor, DynONotifier, SomeLocalExecutor, Priority, SomeExecutor};
 
 /**
 A task identifier.
@@ -54,7 +56,7 @@ Executors convert [Task] into this type in order to poll the future.
 */
 #[derive(Debug)]
 pub struct SpawnedTask<F,ONotifier,Executor> where F: Future {
-    task: TaskLocalImmutableFuture<Option<Box<dyn LocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>>, TaskLocalImmutableFuture<Box<(dyn SomeExecutor<ExecutorNotifier = Box<(dyn ExecutorNotified + 'static)>> + 'static)>, TaskLocalImmutableFuture<TaskID, TaskLocalImmutableFuture<InFlightTaskCancellation, TaskLocalImmutableFuture<priority::Priority, TaskLocalImmutableFuture<String, F>>>>>>,
+    task: TaskLocalImmutableFuture<Option<Box<dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>>, TaskLocalImmutableFuture<Box<(dyn SomeExecutor<ExecutorNotifier = Box<(dyn ExecutorNotified + 'static)>> + 'static)>, TaskLocalImmutableFuture<TaskID, TaskLocalImmutableFuture<InFlightTaskCancellation, TaskLocalImmutableFuture<priority::Priority, TaskLocalImmutableFuture<String, F>>>>>>,
     sender: ObserverSender<F::Output,ONotifier>,
     phantom: PhantomData<Executor>,
     poll_after: std::time::Instant,
@@ -216,7 +218,7 @@ impl<F: Future,N> Task<F,N> {
     /**
     Spawns the task onto a local executor
     */
-    pub fn spawn_local<Executor: LocalExecutor>(mut self,executor: &mut Executor) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
+    pub fn spawn_local<Executor: SomeLocalExecutor>(self, executor: &mut Executor) -> (SpawnedTask<F,N,Executor::ExecutorNotifier>, Observer<F::Output,Executor::ExecutorNotifier>) {
         let local_executor = executor.clone_local_box();
         Self::__spawn(self,executor,Some(local_executor))
     }
