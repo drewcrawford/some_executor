@@ -57,7 +57,7 @@ Cancellation in some_executor is optimistic.  There are three types:
 */
 #[must_use]
 #[derive(Debug)]
-pub struct Observer<T,ENotifier: ExecutorNotified> {
+pub struct Observer<T,ENotifier:ExecutorNotified> {
     shared: Arc<Shared<T>>,
     task_id: TaskID,
     notifier: Option<ENotifier>,
@@ -66,7 +66,7 @@ pub struct Observer<T,ENotifier: ExecutorNotified> {
 
 
 
-impl<T,ENotifier: ExecutorNotified> Drop for Observer<T,ENotifier> {
+impl<'executor, T,ENotifier: ExecutorNotified> Drop for Observer< T,ENotifier> {
     fn drop(&mut self) {
         if !self.detached {
             self.shared.observer_cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -76,6 +76,9 @@ impl<T,ENotifier: ExecutorNotified> Drop for Observer<T,ENotifier> {
     }
 }
 
+/**
+The sender side of an observer.  This side is held by the executor, and is used to send values to the observer.
+*/
 #[derive(Debug)]
 pub(crate) struct ObserverSender<T,Notifier> {
     shared: Arc<Shared<T>>,
@@ -146,6 +149,10 @@ impl<T,E: ExecutorNotified> Observer<T,E> {
                 Observation::Cancelled
             }
         }
+    }
+
+    pub(crate) fn into_boxed_notifier<'a>(mut self) -> Observer< T,Box<dyn ExecutorNotified + 'a>> where Self: 'a {
+        Observer { shared: self.shared.clone(), task_id: self.task_id, notifier: self.notifier.take().map(|n| Box::new(n) as Box<dyn ExecutorNotified>), detached: self.detached }
     }
     /**
     Returns the task id of the task being observed.
@@ -220,13 +227,13 @@ impl<T> ObserverNotified<T> for NoNotified {
     }
 }
 
-impl ExecutorNotified for NoNotified {
+impl<'executor> ExecutorNotified for NoNotified {
     fn request_cancel(&mut self) {
         panic!("NoNotified should not be used");
     }
 }
 
-pub(crate) fn observer_channel<R,ONotifier,ENotifier: ExecutorNotified>(observer_notify: Option<ONotifier>, executor_notify: Option<ENotifier>, task_cancellation: InFlightTaskCancellation, task_id: TaskID) -> (ObserverSender<R,ONotifier>, Observer<R,ENotifier>) {
+pub(crate) fn observer_channel<'enotifier, R,ONotifier,ENotifier: ExecutorNotified>(observer_notify: Option<ONotifier>, executor_notify: Option<ENotifier>, task_cancellation: InFlightTaskCancellation, task_id: TaskID) -> (ObserverSender<R,ONotifier>, Observer< R,ENotifier>) {
     let shared = Arc::new(Shared { lock: std::sync::Mutex::new(Observation::Pending), observer_cancelled: AtomicBool::new(false), in_flight_task_cancellation: task_cancellation });
     (ObserverSender {shared: shared.clone(), notifier: observer_notify}, Observer {shared, task_id, notifier: executor_notify, detached: false})
 }
@@ -237,7 +244,7 @@ Allow a Box<dyn ExecutorNotified> to be used as an ExecutorNotified directly.
 
 The implementation proceeds by dyanmic dispatch.
 */
-impl ExecutorNotified for Box<dyn ExecutorNotified> {
+impl ExecutorNotified for Box<dyn ExecutorNotified + '_> {
     fn request_cancel(&mut self) {
         (**self).request_cancel();
     }
@@ -246,7 +253,7 @@ impl ExecutorNotified for Box<dyn ExecutorNotified> {
 /*
 I don't really get why we need both of these... but we do!
  */
-impl ExecutorNotified for Box<dyn ExecutorNotified + Send> {
+impl<'executor> ExecutorNotified for Box<dyn ExecutorNotified + Send> {
     fn request_cancel(&mut self) {
         (**self).request_cancel();
     }
@@ -275,7 +282,7 @@ Observer - avoid copy/clone, Eq, Hash, default (channel), from/into, asref/asmut
 
         /* observer can send when the underlying value can */
         #[allow(unused)]
-        fn ex<T: Send,E: ExecutorNotified + Send>(_observer: Observer<T,E>) {
+        fn ex< 'executor, T: Send,E: ExecutorNotified + Send>(_observer: Observer<T,E>) {
             fn assert_send<T: Send>() {}
             assert_send::<Observer<T,E>>();
         }
@@ -283,7 +290,7 @@ Observer - avoid copy/clone, Eq, Hash, default (channel), from/into, asref/asmut
     #[test] fn test_unpin() {
         /* observer can unpin */
         #[allow(unused)]
-        fn ex<T,E: ExecutorNotified + Unpin>(_observer: Observer<T,E>) {
+        fn ex<'executor, T,E: ExecutorNotified + Unpin>(_observer: Observer<T,E>) {
             fn assert_unpin<T: Unpin>() {}
             assert_unpin::<Observer<T,E>>();
         }

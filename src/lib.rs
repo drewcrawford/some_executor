@@ -146,7 +146,7 @@ pub trait SomeExecutorExt: SomeExecutor + Clone {
 /**
 A trait for executors that can spawn tasks onto the local thread.
 */
-pub trait SomeLocalExecutor<'tasks> {
+pub trait SomeLocalExecutor {
     type ExecutorNotifier: ExecutorNotified;
     /**
     Spawns a future onto the runtime.
@@ -155,14 +155,14 @@ pub trait SomeLocalExecutor<'tasks> {
     - `task`: The task to spawn.
 
     */
-    fn spawn_local<F: Future + 'tasks, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized;
+    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
     */
-    fn spawn_local_async<F: Future + 'tasks,Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>> where Self: Sized;
+    fn spawn_local_async<F: Future ,Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> impl Future<Output=Observer< F::Output, Self::ExecutorNotifier>> where Self: Sized;
 
     /**
     Spawns a future onto the runtime.
@@ -173,7 +173,8 @@ pub trait SomeLocalExecutor<'tasks> {
     */
     fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>,Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>;
 
-    fn clone_local_box(&self) -> Box<DynLocalExecutor>;
+    fn spawn_local_objsafe_async(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>,Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>>>;
+
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
 
@@ -184,13 +185,14 @@ The appropriate type for a dynamically-dispatched executor.
 */
 pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier = NoNotified>;
 
+
 impl Debug for DynExecutor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("DynExecutor")
     }
 }
 
-impl Debug for DynLocalExecutor<'_> {
+impl Debug for AnyLocalExecutor<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("DynLocalExecutor")
     }
@@ -204,15 +206,86 @@ A non-objsafe descendant of [SomeLocalExecutor].
 This trait provides a more ergonomic interface, but is not object-safe.
 
 */
-pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor<'tasks> + Clone {
+pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor + Clone {
 
 }
 
-/**
-The appropriate type for a dynamically-dispatched local executor
-*/
 
-pub type DynLocalExecutor<'executor> = dyn for<'a> SomeLocalExecutor<'a, ExecutorNotifier = NoNotified>;
+struct SomeLocalExecutorErasingNotifier<'a, UnderlyingExecutor: SomeLocalExecutor + ?Sized > {
+    executor: &'a mut UnderlyingExecutor,
+}
+
+impl<'executor, UnderlyingExecutor: SomeLocalExecutor> SomeLocalExecutor for SomeLocalExecutorErasingNotifier<'executor, UnderlyingExecutor> {
+    type ExecutorNotifier = Box<dyn ExecutorNotified>;
+
+    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized
+    {
+        todo!()
+    }
+
+    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer< F::Output, Self::ExecutorNotifier>>
+    where
+        Self: Sized
+    {
+        async {
+            todo!()
+        }
+    }
+
+    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
+        todo!()
+    }
+
+    fn spawn_local_objsafe_async(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>>> {
+        todo!()
+    }
+
+    fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
+        todo!()
+    }
+}
+
+
+
+pub struct AnyLocalExecutor<'underlying> {
+    executor: Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>+ 'underlying>
+}
+
+impl<'a> AnyLocalExecutor<'a> {
+    pub fn new<E: SomeLocalExecutor>(executor: &'a mut E) -> Self {
+        AnyLocalExecutor {
+            executor: Box::new(SomeLocalExecutorErasingNotifier { executor })
+        }
+    }
+}
+impl<'executor> SomeLocalExecutor for AnyLocalExecutor<'executor> {
+    type ExecutorNotifier = Box<dyn ExecutorNotified>;
+
+    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized
+    {
+        todo!()
+    }
+
+    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
+    where
+        Self: Sized
+    {
+        async { todo!() }
+
+    }
+
+    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
+        self.executor.spawn_local_objsafe(task)
+    }
+
+    fn spawn_local_objsafe_async(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>>> {
+        todo!()
+    }
+
+    fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
+        self.executor.executor_notifier().map(|x| Box::new(x) as Box<dyn ExecutorNotified>)
+    }
+}
 
 
 #[cfg(test)] mod tests {
