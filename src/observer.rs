@@ -152,7 +152,7 @@ impl<T,E: ExecutorNotified> Observer<T,E> {
         }
     }
 
-    pub(crate) fn into_boxed_notifier<'a>(mut self) -> Observer< T,Box<dyn ExecutorNotified + 'a>> where E: 'a {
+    pub(crate) fn into_boxed_notifier(mut self) -> Observer< T,Box<dyn ExecutorNotified>> {
         Observer { shared: self.shared.clone(), task_id: self.task_id, notifier: self.notifier.take().map(|n| Box::new(n) as Box<dyn ExecutorNotified>), detached: self.detached }
     }
     /**
@@ -226,7 +226,7 @@ A trait for executors to receive notifications.
 Handling notifications is optional.  If your executor does not want to bother, pass `None` in place
 of functions taking this type, and set the type to [NoNotified].
 */
-pub trait ExecutorNotified {
+pub trait ExecutorNotified: 'static {
     /**
     This function is called when the user requests the task be cancelled.
 

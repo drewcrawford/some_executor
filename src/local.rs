@@ -18,7 +18,7 @@ impl <'underlying, UnderlyingExecutor: SomeLocalExecutor> SomeLocalExecutorErasi
 }
 
 impl<'executor, UnderlyingExecutor: SomeLocalExecutor> SomeLocalExecutor for SomeLocalExecutorErasingNotifier<'executor, UnderlyingExecutor> {
-    type ExecutorNotifier = Box<dyn ExecutorNotified + 'executor>;
+    type ExecutorNotifier = Box<dyn ExecutorNotified>;
 
     fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
     where
