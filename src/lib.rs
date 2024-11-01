@@ -86,7 +86,7 @@ Code targeting this trait can spawn tasks on an executor without knowing which e
 
 If possible, use the [SomeExecutorExt] trait instead.  But this trait is useful if you need an objsafe trait.
 */
-pub trait SomeExecutor: Send + 'static + Sync {
+pub trait SomeExecutor: Send + Sync {
     type ExecutorNotifier: ExecutorNotified;
     /**
     Spawns a future onto the runtime.
@@ -202,11 +202,7 @@ impl Debug for DynExecutor {
     }
 }
 
-impl Debug for AnyLocalExecutor<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("DynLocalExecutor")
-    }
-}
+
 
 pub type DynONotifier = dyn ObserverNotified<Box<dyn Any + Send>>;
 
@@ -266,52 +262,6 @@ impl<'executor, UnderlyingExecutor: SomeLocalExecutor> SomeLocalExecutor for Som
     }
 }
 
-
-pub struct AnyLocalExecutor<'underlying> {
-    executor: Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified + 'underlying>> + 'underlying>,
-}
-
-impl<'a> AnyLocalExecutor<'a> {
-    pub fn new<E: SomeLocalExecutor>(executor: &'a mut E) -> Self {
-        AnyLocalExecutor {
-            executor: Box::new(SomeLocalExecutorErasingNotifier { executor })
-        }
-    }
-}
-impl<'executor> SomeLocalExecutor for AnyLocalExecutor<'executor> {
-    type ExecutorNotifier = Box<dyn ExecutorNotified + 'executor>;
-
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
-    where 
-        Self: Sized,
-    /* I am a little uncertain whether this is really required */
-        F::Output: Unpin,
-    {
-        unimplemented!("AnyLocalExecutor doesn't implement this method; use objsafe methods instead")
-    }
-
-    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
-    where
-        Self: Sized,
-    {
-        async {
-            unimplemented!("AnyLocalExecutor doesn't implement this method; use objsafe methods instead")
-        }
-    }
-
-
-    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
-        self.executor.spawn_local_objsafe(task)
-    }
-
-    fn spawn_local_objsafe_async<'e>(&'e mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 'e> {
-        self.executor.spawn_local_objsafe_async(task)
-    }
-
-    fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
-        self.executor.executor_notifier().map(|x| Box::new(x) as Self::ExecutorNotifier)
-    }
-}
 
 
 #[cfg(test)]

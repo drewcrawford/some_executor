@@ -13,7 +13,7 @@ use std::task::{Context, Poll};
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverNotifiedAdapter, ObserverSender};
-use crate::{task_local, DynExecutor, DynONotifier, SomeLocalExecutor, Priority, SomeExecutor, AnyLocalExecutor};
+use crate::{task_local, DynExecutor, DynONotifier, SomeLocalExecutor, Priority, SomeExecutor};
 
 /**
 A task identifier.
@@ -213,7 +213,7 @@ task_local! {
 }
 
 thread_local! {
-    static TASK_LOCAL_EXECUTOR: RefCell<Option<AnyLocalExecutor</* not static but don't ask about it */'static>>> = RefCell::new(None);
+    static TASK_LOCAL_EXECUTOR: RefCell<Option<Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>>>> = RefCell::new(None);
 }
 
 impl<F: Future, N> Task<F, N> {
@@ -329,14 +329,14 @@ impl<F: Future, N> Task<F, N> {
                                           I don't really get why we can't spell DynLocalExecutor here, but there is some lifetime issue with it.  Let's be explicit:
                                            */
                                           executor: &mut dyn SomeLocalExecutor<ExecutorNotifier=NoNotified>) ->
-                                          (SpawnedLocalTask<F, N, Box<AnyLocalExecutor<'executor>>>,
+                                          (SpawnedLocalTask<F, N, Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>>>,
                                            Observer<F::Output, Box<dyn ExecutorNotified>>) {
         let cancellation = self.task_cancellation();
         let task_id = self.task_id();
         let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified>);
         let (sender, receiver) = observer_channel(self.notifier.take(), boxed_executor_notifier, cancellation, task_id);
         let scoped = TASK_EXECUTOR.scope_internal(None, self.future);
-        let spawned_task: SpawnedLocalTask<F, N, Box<AnyLocalExecutor>> = SpawnedLocalTask {
+        let spawned_task: SpawnedLocalTask<F, N, Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>>> = SpawnedLocalTask {
             executor: PhantomData,
             task: scoped,
             sender,
@@ -399,12 +399,12 @@ where
         };
         //set local executor
         //I solemnly swear I'm up to no good
-        let not_static_executor = AnyLocalExecutor::new(executor);
-
         todo!();
+        // let not_static_executor = executor.
         //     TASK_LOCAL_EXECUTOR.with(|e| {
         //     e.borrow_mut().replace(not_static_executor);
         // });
+
 
         if sender.observer_cancelled() {
             //we don't really need to notify the observer here.  Also the notifier will run upon drop.
