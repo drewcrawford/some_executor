@@ -1,6 +1,7 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
 use std::any::Any;
+use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use crate::DynONotifier;
@@ -188,14 +189,35 @@ possible designs:
     forcing them to figure out interior mutability and synchronization
 2.  Require Unpin, allowing the type to be moved into the future.  This is the design we have chosen.
 
-We need Send because the ObserNotified is part of the task, which can be moved to another thread.
 */
-pub trait ObserverNotified<T>: Unpin + Send + 'static {
+pub trait ObserverNotified<T: ?Sized>: Unpin + 'static {
 
     /**
     This function will be run inline when the task completes.
 */
     fn notify(&mut self, value: &T);
+}
+
+/**
+Erases the underlying value of an ObserverNotified.
+*/
+pub(crate) struct ObserverNotifiedAdapter<Underlying,T>(Underlying,
+PhantomData<T>
+);
+impl<Underlying,T> ObserverNotifiedAdapter<Underlying,T> {
+    pub fn new(value: Underlying) -> Self {
+        ObserverNotifiedAdapter(value,PhantomData)
+    }
+}
+
+impl<Underlying: ObserverNotified<T>,T> ObserverNotified<dyn Any> for ObserverNotifiedAdapter<Underlying,T>
+where T: 'static, /* I am a little uncertain if this is really a hard requirement */
+T: Unpin, /* or this one... */
+{
+    fn notify(&mut self, value: &dyn Any) {
+        let value = value.downcast_ref::<T>().expect("Downcast failed");
+        self.0.notify(value);
+    }
 }
 
 /**
@@ -259,14 +281,7 @@ impl<'executor> ExecutorNotified for Box<dyn ExecutorNotified + Send> {
     }
 }
 
-/**
-Allow a Box<DynONotifier> to be used as an ObserverNotified directly.
-*/
-impl ObserverNotified<Box<(dyn Any + Send + 'static)>> for Box<DynONotifier> {
-    fn notify(&mut self, value: &Box<(dyn Any + Send + 'static)>) {
-        (**self).notify(value);
-    }
-}
+
 
 /*
 boilerplates

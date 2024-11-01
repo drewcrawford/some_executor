@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::task::{Context, Poll};
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
-use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
+use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverNotifiedAdapter, ObserverSender};
 use crate::{task_local, DynExecutor, DynONotifier, SomeLocalExecutor, Priority, SomeExecutor, AnyLocalExecutor};
 
 /**
@@ -739,8 +739,7 @@ mod tests {
                 }
             }
 
-            fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
-                let t = task.spawn_local_objsafe(self);
+            fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
                 todo!()
             }
 
