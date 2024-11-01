@@ -14,6 +14,7 @@ use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverNotifiedAdapter, ObserverSender};
 use crate::{task_local, DynExecutor, DynONotifier, SomeLocalExecutor, Priority, SomeExecutor};
+use crate::local::UnsafeErasedLocalExecutor;
 
 /**
 A task identifier.
@@ -398,8 +399,15 @@ where
             (future, sender)
         };
         //set local executor
+        let mut erased_value_executor = Box::new(crate::local::SomeLocalExecutorErasingNotifier::new(executor)) as Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>> + '_>;
+        let erased_value_executor_ref = Box::as_mut(&mut erased_value_executor);
+
         //I solemnly swear I'm up to no good
-        todo!();
+        unsafe {
+            let erased_unsafe_executor = UnsafeErasedLocalExecutor::new(erased_value_executor_ref);
+
+        }
+
         // let not_static_executor = executor.
         //     TASK_LOCAL_EXECUTOR.with(|e| {
         //     e.borrow_mut().replace(not_static_executor);
