@@ -173,7 +173,7 @@ pub trait SomeLocalExecutor {
     */
     fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>,Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>;
 
-    fn spawn_local_objsafe_async(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>,Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>>>;
+    fn spawn_local_objsafe_async<'executor>(&'executor mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>,Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 'executor>;
 
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
@@ -229,20 +229,27 @@ impl<'executor, UnderlyingExecutor: SomeLocalExecutor> SomeLocalExecutor for Som
         Self: Sized
     {
         async {
-            todo!()
+            let o = self.executor.spawn_local_async(task).await;
+            o.into_boxed_notifier()
         }
     }
 
     fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
-        todo!()
+        let o = self.executor.spawn_local_objsafe(task);
+        o.into_boxed_notifier()
     }
 
-    fn spawn_local_objsafe_async(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>>> {
-        todo!()
+    fn spawn_local_objsafe_async<'e>(&'e mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 'e> {
+        Box::new(async {
+            let f = self.executor.spawn_local_objsafe_async(task);
+            let f = Box::into_pin(f);
+            let o = f.await;
+            o.into_boxed_notifier()
+        })
     }
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
-        todo!()
+        self.executor.executor_notifier().map(|x| Box::new(x) as Self::ExecutorNotifier )
     }
 }
 
