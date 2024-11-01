@@ -211,16 +211,17 @@ pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor + Clone {
 }
 
 
-struct SomeLocalExecutorErasingNotifier<'a, UnderlyingExecutor: SomeLocalExecutor + ?Sized > {
-    executor: &'a mut UnderlyingExecutor,
+struct SomeLocalExecutorErasingNotifier<'underlying, UnderlyingExecutor: SomeLocalExecutor + ?Sized > {
+    executor: &'underlying mut UnderlyingExecutor,
 }
 
 impl<'executor, UnderlyingExecutor: SomeLocalExecutor> SomeLocalExecutor for SomeLocalExecutorErasingNotifier<'executor, UnderlyingExecutor> {
-    type ExecutorNotifier = Box<dyn ExecutorNotified>;
+    type ExecutorNotifier = Box<dyn ExecutorNotified + 'executor>;
 
     fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized
     {
-        todo!()
+        let o = self.executor.spawn_local(task);
+        o.into_boxed_notifier()
     }
 
     fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer< F::Output, Self::ExecutorNotifier>>
@@ -248,7 +249,7 @@ impl<'executor, UnderlyingExecutor: SomeLocalExecutor> SomeLocalExecutor for Som
 
 
 pub struct AnyLocalExecutor<'underlying> {
-    executor: Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>+ 'underlying>
+    executor: Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified + 'underlying>> + 'underlying>
 }
 
 impl<'a> AnyLocalExecutor<'a> {
@@ -259,7 +260,7 @@ impl<'a> AnyLocalExecutor<'a> {
     }
 }
 impl<'executor> SomeLocalExecutor for AnyLocalExecutor<'executor> {
-    type ExecutorNotifier = Box<dyn ExecutorNotified>;
+    type ExecutorNotifier = Box<dyn ExecutorNotified + 'executor>;
 
     fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized
     {
@@ -283,7 +284,7 @@ impl<'executor> SomeLocalExecutor for AnyLocalExecutor<'executor> {
     }
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
-        self.executor.executor_notifier().map(|x| Box::new(x) as Box<dyn ExecutorNotified>)
+        self.executor.executor_notifier().map(|x| Box::new(x) as Self::ExecutorNotifier )
     }
 }
 

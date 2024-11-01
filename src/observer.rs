@@ -151,7 +151,7 @@ impl<T,E: ExecutorNotified> Observer<T,E> {
         }
     }
 
-    pub(crate) fn into_boxed_notifier<'a>(mut self) -> Observer< T,Box<dyn ExecutorNotified + 'a>> where Self: 'a {
+    pub(crate) fn into_boxed_notifier<'a>(mut self) -> Observer< T,Box<dyn ExecutorNotified + 'a>> where E: 'a {
         Observer { shared: self.shared.clone(), task_id: self.task_id, notifier: self.notifier.take().map(|n| Box::new(n) as Box<dyn ExecutorNotified>), detached: self.detached }
     }
     /**
