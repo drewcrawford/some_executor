@@ -399,12 +399,12 @@ where
             (future, sender)
         };
         //set local executor
-        let mut erased_value_executor = Box::new(crate::local::SomeLocalExecutorErasingNotifier::new(executor)) as Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>>;
+        let mut erased_value_executor = Box::new(crate::local::SomeLocalExecutorErasingNotifier::new(executor)) as Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>> + '_>;
         let erased_value_executor_ref = Box::as_mut(&mut erased_value_executor);
 
         //I solemnly swear I'm up to no good
         unsafe {
-            // let erased_unsafe_executor = UnsafeErasedLocalExecutor::new(erased_value_executor_ref);
+            let erased_unsafe_executor = UnsafeErasedLocalExecutor::new(erased_value_executor_ref);
 
         }
 

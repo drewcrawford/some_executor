@@ -72,7 +72,7 @@ impl UnsafeErasedLocalExecutor {
 
     The underlying executor must be valid for the lifetime of this type.
     */
-    pub unsafe fn new<'e>(underlying:&mut (dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified + 'e>> + 'e)) -> Self {
+    pub unsafe fn new<'e>(underlying:&mut (dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>> + 'e)) -> Self {
         Self {
             underlying: std::mem::transmute(underlying),
         }
