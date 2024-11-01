@@ -94,25 +94,25 @@ impl SomeLocalExecutor for UnsafeErasedLocalExecutor {
         Self: Sized,
         <F as Future>::Output: Unpin
     {
-        todo!()
+        unimplemented!("Not implemented for erased executor; use objsafe method")
     }
 
     fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
     where
         Self: Sized
     {
-        async { todo! () }
+        async { unimplemented!("Not implemented for erased executor; use objsafe method") }
     }
 
     fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
-        todo!()
+        self.executor().spawn_local_objsafe(task)
     }
 
     fn spawn_local_objsafe_async<'executor>(&'executor mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 'executor> {
-        todo!()
+        self.executor().spawn_local_objsafe_async(task)
     }
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
-        todo!()
+        self.executor().executor_notifier()
     }
 }
