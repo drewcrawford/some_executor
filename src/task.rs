@@ -405,14 +405,10 @@ where
         //I solemnly swear I'm up to no good
         unsafe {
             let erased_unsafe_executor = UnsafeErasedLocalExecutor::new(erased_value_executor_ref);
-
+            TASK_LOCAL_EXECUTOR.with(|e| {
+                e.borrow_mut().replace(Box::new(erased_unsafe_executor));
+            });
         }
-
-        // let not_static_executor = executor.
-        //     TASK_LOCAL_EXECUTOR.with(|e| {
-        //     e.borrow_mut().replace(not_static_executor);
-        // });
-
 
         if sender.observer_cancelled() {
             //we don't really need to notify the observer here.  Also the notifier will run upon drop.
