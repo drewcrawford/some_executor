@@ -227,13 +227,6 @@ impl<V,F> TaskLocalImmutableFuture<V,F> {
         self.future
     }
 
-    pub(crate) fn map_underlying_future<F2>(self, f: impl FnOnce(F) -> F2) -> TaskLocalImmutableFuture<V,F2> {
-        TaskLocalImmutableFuture {
-            slot: self.slot,
-            local_key: self.local_key,
-            future: f(self.future)
-        }
-    }
 }
 
 impl<V,F> Future for TaskLocalFuture<V,F> where V: Unpin, F: Future {

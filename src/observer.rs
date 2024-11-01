@@ -1,10 +1,7 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
-use std::any::Any;
-use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use crate::DynONotifier;
 use crate::task::{InFlightTaskCancellation, TaskID};
 
 #[derive(Debug)]
@@ -198,27 +195,6 @@ pub trait ObserverNotified<T: ?Sized>: Unpin + 'static {
     fn notify(&mut self, value: &T);
 }
 
-/**
-Erases the underlying value of an ObserverNotified.
-*/
-pub(crate) struct ObserverNotifiedAdapter<Underlying,T>(Underlying,
-PhantomData<T>
-);
-impl<Underlying,T> ObserverNotifiedAdapter<Underlying,T> {
-    pub fn new(value: Underlying) -> Self {
-        ObserverNotifiedAdapter(value,PhantomData)
-    }
-}
-
-impl<Underlying: ObserverNotified<T>,T> ObserverNotified<dyn Any> for ObserverNotifiedAdapter<Underlying,T>
-where T: 'static, /* I am a little uncertain if this is really a hard requirement */
-T: Unpin, /* or this one... */
-{
-    fn notify(&mut self, value: &dyn Any) {
-        let value = value.downcast_ref::<T>().expect("Downcast failed");
-        self.0.notify(value);
-    }
-}
 
 /**
 A trait for executors to receive notifications.

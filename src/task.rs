@@ -9,10 +9,10 @@ use std::ops::{Sub};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::task::{Context, Poll};
+use std::task::{Poll};
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
-use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverNotifiedAdapter, ObserverSender};
+use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
 use crate::{task_local, DynExecutor, DynONotifier, SomeLocalExecutor, Priority, SomeExecutor};
 use crate::local::UnsafeErasedLocalExecutor;
 
@@ -291,7 +291,7 @@ impl<F: Future, N> Task<F, N> {
     /**
     Spawns the task onto a local executor
     */
-    pub fn spawn_local<'executor, Executor: SomeLocalExecutor>(mut self, executor: &mut Executor) -> (SpawnedLocalTask<F, N, <Executor as SomeLocalExecutor>::ExecutorNotifier>) {
+    pub fn spawn_local<'executor, Executor: SomeLocalExecutor>(mut self, executor: &mut Executor) -> (SpawnedLocalTask<F, N, <Executor as SomeLocalExecutor>::ExecutorNotifier>, Observer<F::Output, Executor::ExecutorNotifier>) {
         let cancellation = self.task_cancellation();
         let task_id = self.task_id();
         let (sender, receiver) = observer_channel(self.notifier.take(), executor.executor_notifier(), cancellation, task_id);
@@ -303,7 +303,7 @@ impl<F: Future, N> Task<F, N> {
             poll_after: self.poll_after,
             hint: self.hint,
         };
-        (spawned_task)
+        (spawned_task, receiver)
     }
 
     pub fn spawn_objsafe(mut self, executor: &mut (dyn SomeExecutor<ExecutorNotifier = NoNotified> + 'static)) -> (SpawnedTask<F, N, Box<dyn ExecutorNotified + Send>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
@@ -389,7 +389,7 @@ where
 {
     //I can't believe it's not future
 
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'executor mut Executor) -> std::task::Poll<()> {
+    pub fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'executor mut Executor) -> std::task::Poll<()> {
         assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
         let (future, sender) = unsafe {
@@ -648,11 +648,10 @@ impl Into<bool> for InFlightTaskCancellation {
 mod tests {
     use std::any::Any;
     use std::future::Future;
-    use std::marker::PhantomData;
     use std::pin::Pin;
     use crate::observer::{ExecutorNotified, NoNotified, Observer, ObserverNotified};
-    use crate::task::{DynLocalSpawnedTask, SpawnedLocalTask, SpawnedTask, Task};
-    use crate::{task_local, DynExecutor, DynONotifier, SomeExecutor, SomeLocalExecutor};
+    use crate::task::{DynLocalSpawnedTask, SpawnedTask, Task};
+    use crate::{task_local, DynONotifier, SomeExecutor, SomeLocalExecutor};
     #[test]
     fn test_send() {
         task_local!(
@@ -719,6 +718,7 @@ mod tests {
 
     #[test]
     fn test_local_executor() {
+
         struct ExLocalExecutor<'executor>(Vec<Pin<Box<dyn DynLocalSpawnedTask + 'executor>>>);
 
         impl<'executor> SomeLocalExecutor for ExLocalExecutor<'executor> {
@@ -726,14 +726,14 @@ mod tests {
 
             fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized
             {
-                let (spawn) = task.spawn_local(self);
+                let spawn = task.spawn_local(self);
                 let pinned_spawn = Box::pin(spawn);
                 // self.0.push(pinned_spawn);
                 todo!()
                 // observer
             }
 
-            fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
+            fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
             where
                 Self: Sized,
             {
@@ -743,11 +743,11 @@ mod tests {
                 }
             }
 
-            fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
+            fn spawn_local_objsafe(&mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
                 todo!()
             }
 
-            fn spawn_local_objsafe_async(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>>> {
+            fn spawn_local_objsafe_async(&mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>>> {
                 Box::new(async { todo!() })
             }
 

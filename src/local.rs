@@ -89,7 +89,7 @@ impl UnsafeErasedLocalExecutor {
 impl SomeLocalExecutor for UnsafeErasedLocalExecutor {
     type ExecutorNotifier = Box<dyn ExecutorNotified>;
 
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
+    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
     where
         Self: Sized,
         <F as Future>::Output: Unpin
@@ -97,7 +97,7 @@ impl SomeLocalExecutor for UnsafeErasedLocalExecutor {
         unimplemented!("Not implemented for erased executor; use objsafe method")
     }
 
-    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
+    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
     where
         Self: Sized
     {
