@@ -327,10 +327,10 @@ impl<F: Future, N> Task<F, N> {
 
     For this to work, we have to erase the output type to dyn Any.
     */
-    pub fn spawn_local_objsafe(mut self, executor: &mut (dyn SomeLocalExecutor<ExecutorNotifier=NoNotified> + 'static)) -> (SpawnedLocalTask<F, N, Box<dyn ExecutorNotified + Send>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
+    pub fn spawn_local_objsafe(mut self, executor: &mut (dyn SomeLocalExecutor<ExecutorNotifier=NoNotified>)) -> (SpawnedLocalTask<F, N, Box<dyn ExecutorNotified>>, Observer<F::Output, Box<dyn ExecutorNotified>>) {
         let cancellation = self.task_cancellation();
         let task_id = self.task_id();
-        let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified + Send>);
+        let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified>);
         let (sender, receiver) = observer_channel(self.notifier.take(), boxed_executor_notifier, cancellation, task_id);
         let scoped = TASK_EXECUTOR.scope_internal(None, self.future);
         let spawned_task = SpawnedLocalTask {
@@ -516,7 +516,6 @@ pub trait DynLocalSpawnedTask {}
 impl<'executor, F, ONotifier, Executor> DynLocalSpawnedTask for SpawnedLocalTask<F, ONotifier, Executor>
 where
     F: Future,
-    ONotifier: ObserverNotified<F::Output>,
 {}
 
 
