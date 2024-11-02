@@ -103,10 +103,13 @@ where
     sender: ObserverSender<F::Output, ONotifier>,
     poll_after: std::time::Instant,
     executor: PhantomData<Executor>,
-    label: String,
     hint: Hint,
     priority: Priority,
     task_id: TaskID,
+    //these task-local properties are optional so we can move them in and out
+    label: Option<String>,
+
+    //copy-safe task-local properties
 }
 
 
@@ -146,7 +149,7 @@ impl<'executor, F: Future, ONotifier, Executor> SpawnedLocalTask<F, ONotifier, E
     }
 
     pub fn label(&self) -> &str {
-        self.label.as_ref()
+        self.label.as_ref().expect("Future is polling")
     }
 
     pub fn priority(&self) -> priority::Priority {
@@ -324,7 +327,7 @@ impl<F: Future, N> Task<F, N> {
             poll_after: self.poll_after,
             hint: self.hint,
             priority: self.priority,
-            label: self.label,
+            label: Some(self.label),
             task_id,
         };
         (spawned_task, receiver)
@@ -367,7 +370,7 @@ impl<F: Future, N> Task<F, N> {
             hint: self.hint,
             priority: self.priority,
             executor: PhantomData,
-            label: self.label,
+            label: Some(self.label),
             task_id,
         };
         (spawned_task, receiver)
@@ -497,18 +500,25 @@ where
     pub fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'executor mut Executor) -> std::task::Poll<()> {
         assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let (future, sender) = unsafe {
+        let (future, sender, label) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.task);
             let sender = Pin::new_unchecked(&mut unchecked.sender);
-            (future, sender)
+            let label = Pin::new_unchecked(&mut unchecked.label);
+
+            (future, sender, label)
         };
         //set local executor
         let mut erased_value_executor = Box::new(crate::local::SomeLocalExecutorErasingNotifier::new(executor)) as Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>> + '_>;
         let erased_value_executor_ref = Box::as_mut(&mut erased_value_executor);
 
-        //I solemnly swear I'm up to no good
+        //set task local properties
+        let label = label.get_mut();
         unsafe {
+            TASK_LABEL.with_mut(|l| {
+                *l = Some(label.take().expect("Label not set (is task being polled already?)"));
+            });
+
             let erased_unsafe_executor = UnsafeErasedLocalExecutor::new(erased_value_executor_ref);
             TASK_LOCAL_EXECUTOR.with(|e| {
                 e.borrow_mut().replace(Box::new(erased_unsafe_executor));
@@ -521,10 +531,17 @@ where
         }
         //perform poll
         let f = future.poll(cx);
-        //clear local executor
-        TASK_LOCAL_EXECUTOR.with(|e| {
-            e.borrow_mut().take().expect("Local executor not set");
-        });
+        //clear local properties
+        unsafe {
+            TASK_LABEL.with_mut(|l| {
+                let read_label = l.take().expect("Label not set");
+                *label = Some(read_label);
+            });
+            TASK_LOCAL_EXECUTOR.with(|e| {
+                e.borrow_mut().take().expect("Local executor not set");
+            });
+        };
+
         match f {
             Poll::Ready(r) => {
                 sender.get_mut().send(r);
