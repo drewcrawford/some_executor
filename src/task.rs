@@ -534,7 +534,9 @@ where
             TASK_ID.with_mut(|i| {
                 *i = Some(task_id);
             });
-
+            TASK_EXECUTOR.with_mut(|e| {
+                *e = None;
+            });
 
             let erased_unsafe_executor = UnsafeErasedLocalExecutor::new(erased_value_executor_ref);
             TASK_LOCAL_EXECUTOR.with(|e| {
@@ -563,6 +565,9 @@ where
             });
             TASK_ID.with_mut(|i| {
                 *i = None;
+            });
+            TASK_EXECUTOR.with_mut(|e| {
+                *e = None;
             });
 
             TASK_LOCAL_EXECUTOR.with(|e| {
