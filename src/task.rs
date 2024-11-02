@@ -9,7 +9,7 @@ use std::ops::{Sub};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::task::{Poll};
+use std::task::{Context, Poll};
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
@@ -540,13 +540,40 @@ impl Configuration {
     }
 }
 
-//dyn traits
-pub trait DynLocalSpawnedTask {}
+/**
+ObjSafe type-erased wrapper for [SpawnedLocalTask].
+*/
+pub trait DynLocalSpawnedTask {
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &mut dyn SomeLocalExecutor<ExecutorNotifier=NoNotified>) -> std::task::Poll<()>;
+    fn poll_after(&self) -> std::time::Instant;
+    fn label(&self) -> String;
+
+    fn hint(&self) -> Hint;
+    fn priority(&self) -> priority::Priority;
+}
 
 impl<'executor, F, ONotifier, Executor> DynLocalSpawnedTask for SpawnedLocalTask<F, ONotifier, Executor>
 where
     F: Future,
-{}
+{
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>, executor: &mut dyn SomeLocalExecutor<ExecutorNotifier=NoNotified>) -> Poll<()> {
+        self.poll(cx, executor)
+    }
+
+    fn poll_after(&self) -> std::time::Instant {
+        self.poll_after
+    }
+    fn label(&self) -> String {
+        self.label()
+    }
+
+    fn hint(&self) -> Hint {
+        self.hint
+    }
+    fn priority(&self) -> priority::Priority {
+        self.priority()
+    }
+}
 
 
 
