@@ -444,6 +444,9 @@ where
             TASK_EXECUTOR.with_mut(|e| {
                 *e = Some(Some(executor.take().expect("Executor not set (is task being polled already?)")));
             });
+            TASK_LOCAL_EXECUTOR.with_borrow_mut(|e| {
+               *e = None;
+            });
 
 
         }
@@ -467,7 +470,10 @@ where
             TASK_EXECUTOR.with_mut(|e| {
                 let read_executor = e.take().expect("Executor not set").expect("Executor not set");
                 *executor = Some(read_executor);
-            })
+            });
+            TASK_LOCAL_EXECUTOR.with_borrow_mut(|e| {
+                *e = None;
+            });
         }
         match r {
             Poll::Ready(r) => {
