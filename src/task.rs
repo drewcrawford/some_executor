@@ -432,8 +432,8 @@ where
     }
 }
 
-impl Task<Pin<Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>>, Box<DynONotifier>> {
-    pub fn new_objsafe(label: String, future: Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>, configuration: Configuration, notifier: Option<Box<DynONotifier>>) -> Self {
+impl Task<Pin<Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>>, Box<dyn ObserverNotified<Box<dyn Any + Send>> + Send>> {
+    pub fn new_objsafe(label: String, future: Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>, configuration: Configuration, notifier: Option<Box<dyn ObserverNotified<Box<dyn Any + Send>> + Send>>) -> Self {
         Self::new(label, Box::into_pin(future), configuration, notifier)
     }
 }
