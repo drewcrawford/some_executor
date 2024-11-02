@@ -503,15 +503,16 @@ where
     pub fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'executor mut Executor) -> std::task::Poll<()> {
         assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let (future, sender, label, priority, cancellation) = unsafe {
+        let (future, sender, label, priority,
+            cancellation, task_id) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.task);
             let sender = Pin::new_unchecked(&mut unchecked.sender);
             let label = Pin::new_unchecked(&mut unchecked.label);
             let priority = Pin::new_unchecked(&mut unchecked.priority);
             let cancellation = Pin::new_unchecked(&mut unchecked.cancellation);
-
-            (future, sender, label, priority, cancellation)
+            let task_id = unchecked.task_id;
+            (future, sender, label, priority, cancellation, task_id)
         };
         //set local executor
         let mut erased_value_executor = Box::new(crate::local::SomeLocalExecutorErasingNotifier::new(executor)) as Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>> + '_>;
@@ -529,6 +530,9 @@ where
             });
             IS_CANCELLED.with_mut(|c| {
                 *c = Some(cancellation.take().expect("Cancellation not set (is task being polled already?)"));
+            });
+            TASK_ID.with_mut(|i| {
+                *i = Some(task_id);
             });
 
 
@@ -557,6 +561,10 @@ where
                 let read_cancellation = c.take().expect("Cancellation not set");
                 *cancellation = Some(read_cancellation);
             });
+            TASK_ID.with_mut(|i| {
+                *i = None;
+            });
+
             TASK_LOCAL_EXECUTOR.with(|e| {
                 e.borrow_mut().take().expect("Local executor not set");
             });
