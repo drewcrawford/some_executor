@@ -734,8 +734,7 @@ mod tests {
                 let (spawn,observer)  = task.spawn_local(self);
                 let pinned_spawn = Box::pin(spawn);
                 self.0.push(pinned_spawn);
-                todo!()
-                // observer
+                observer
             }
 
             fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
