@@ -108,6 +108,7 @@ where
     task_id: TaskID,
     //these task-local properties are optional so we can move them in and out
     label: Option<String>,
+    cancellation: Option<InFlightTaskCancellation>,
 
     //copy-safe task-local properties
 }
@@ -319,7 +320,7 @@ impl<F: Future, N> Task<F, N> {
     pub fn spawn_local<'executor, Executor: SomeLocalExecutor<'executor>>(mut self, executor: &mut Executor) -> (SpawnedLocalTask<F, N, Executor::ExecutorNotifier>, Observer<F::Output, Executor::ExecutorNotifier>) {
         let cancellation = InFlightTaskCancellation::default();
         let task_id = self.task_id();
-        let (sender, receiver) = observer_channel(self.notifier.take(), executor.executor_notifier(), cancellation, task_id);
+        let (sender, receiver) = observer_channel(self.notifier.take(), executor.executor_notifier(), cancellation.clone(), task_id);
         let spawned_task = SpawnedLocalTask {
             task: self.future,
             sender,
@@ -329,6 +330,7 @@ impl<F: Future, N> Task<F, N> {
             priority: self.priority,
             label: Some(self.label),
             task_id,
+            cancellation: Some(cancellation),
         };
         (spawned_task, receiver)
     }
@@ -362,7 +364,7 @@ impl<F: Future, N> Task<F, N> {
         let cancellation = InFlightTaskCancellation::default();
         let task_id = self.task_id();
         let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified>);
-        let (sender, receiver) = observer_channel(self.notifier.take(), boxed_executor_notifier, cancellation, task_id);
+        let (sender, receiver) = observer_channel(self.notifier.take(), boxed_executor_notifier, cancellation.clone(), task_id);
         let spawned_task = SpawnedLocalTask {
             task: self.future,
             sender,
@@ -372,6 +374,7 @@ impl<F: Future, N> Task<F, N> {
             executor: PhantomData,
             label: Some(self.label),
             task_id,
+            cancellation: Some(cancellation),
         };
         (spawned_task, receiver)
     }
@@ -500,14 +503,15 @@ where
     pub fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'executor mut Executor) -> std::task::Poll<()> {
         assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let (future, sender, label, priority) = unsafe {
+        let (future, sender, label, priority, cancellation) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.task);
             let sender = Pin::new_unchecked(&mut unchecked.sender);
             let label = Pin::new_unchecked(&mut unchecked.label);
             let priority = Pin::new_unchecked(&mut unchecked.priority);
+            let cancellation = Pin::new_unchecked(&mut unchecked.cancellation);
 
-            (future, sender, label, priority)
+            (future, sender, label, priority, cancellation)
         };
         //set local executor
         let mut erased_value_executor = Box::new(crate::local::SomeLocalExecutorErasingNotifier::new(executor)) as Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>> + '_>;
@@ -515,6 +519,7 @@ where
 
         //set task local properties
         let label = label.get_mut();
+        let cancellation = cancellation.get_mut();
         unsafe {
             TASK_LABEL.with_mut(|l| {
                 *l = Some(label.take().expect("Label not set (is task being polled already?)"));
@@ -522,6 +527,10 @@ where
             TASK_PRIORITY.with_mut(|p| {
                 *p = Some(*priority.get_mut());
             });
+            IS_CANCELLED.with_mut(|c| {
+                *c = Some(cancellation.take().expect("Cancellation not set (is task being polled already?)"));
+            });
+
 
             let erased_unsafe_executor = UnsafeErasedLocalExecutor::new(erased_value_executor_ref);
             TASK_LOCAL_EXECUTOR.with(|e| {
@@ -543,6 +552,10 @@ where
             });
             TASK_PRIORITY.with_mut(|p| {
                 *p = None;
+            });
+            IS_CANCELLED.with_mut(|c| {
+                let read_cancellation = c.take().expect("Cancellation not set");
+                *cancellation = Some(read_cancellation);
             });
             TASK_LOCAL_EXECUTOR.with(|e| {
                 e.borrow_mut().take().expect("Local executor not set");
