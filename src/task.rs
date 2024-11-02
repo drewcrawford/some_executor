@@ -13,7 +13,7 @@ use std::task::{Poll};
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
-use crate::{task_local, DynExecutor, DynONotifier, SomeLocalExecutor, Priority, SomeExecutor};
+use crate::{task_local, DynExecutor, SomeLocalExecutor, Priority, SomeExecutor};
 use crate::local::UnsafeErasedLocalExecutor;
 
 /**
@@ -652,7 +652,7 @@ mod tests {
     use std::pin::Pin;
     use crate::observer::{ExecutorNotified, NoNotified, Observer, ObserverNotified};
     use crate::task::{DynLocalSpawnedTask, SpawnedTask, Task};
-    use crate::{task_local, DynONotifier, SomeExecutor, SomeLocalExecutor};
+    use crate::{task_local, SomeExecutor, SomeLocalExecutor};
     #[test]
     fn test_send() {
         task_local!(
@@ -752,7 +752,7 @@ mod tests {
                 todo!()
             }
 
-            fn spawn_local_objsafe_async(&mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>>> {
+            fn spawn_local_objsafe_async(&mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>>> {
                 Box::new(async { todo!() })
             }
 

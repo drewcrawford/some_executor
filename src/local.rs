@@ -2,7 +2,7 @@ use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
 use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
-use crate::{DynONotifier, SomeLocalExecutor};
+use crate::{SomeLocalExecutor};
 use crate::task::Task;
 
 pub(crate) struct SomeLocalExecutorErasingNotifier<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying> + ?Sized> {
@@ -48,7 +48,7 @@ impl<'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>> SomeLocalExecu
         o.into_boxed_notifier()
     }
 
-    fn spawn_local_objsafe_async<'e>(&'e mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 'e> {
+    fn spawn_local_objsafe_async<'e>(&'e mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>,Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 'e> {
         Box::new(async {
             let f = self.executor.spawn_local_objsafe_async(task);
             let f = Box::into_pin(f);
@@ -116,7 +116,7 @@ impl<'a> SomeLocalExecutor<'a> for UnsafeErasedLocalExecutor {
         ex.spawn_local_objsafe(task)
     }
 
-    fn spawn_local_objsafe_async<'executor>(&'executor mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 'executor> {
+    fn spawn_local_objsafe_async<'executor>(&'executor mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 'executor> {
         self.executor().spawn_local_objsafe_async(task)
     }
 

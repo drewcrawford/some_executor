@@ -160,7 +160,7 @@ pub trait SomeLocalExecutor<'future> {
     - `task`: The task to spawn.
 
     */
-    fn spawn_local<'a, F: Future, Notifier: ObserverNotified<F::Output>>(&'a mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
+    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
     where
         Self: Sized,
         F: 'future,
@@ -186,7 +186,7 @@ pub trait SomeLocalExecutor<'future> {
     */
     fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>;
 
-    fn spawn_local_objsafe_async<'executor>(&'executor mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 'executor>;
+    fn spawn_local_objsafe_async<'executor>(&'executor mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 'executor>;
 
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
@@ -206,7 +206,6 @@ impl Debug for DynExecutor {
 
 
 
-pub type DynONotifier = dyn ObserverNotified<Box<dyn Any + Send>>;
 
 /**
 A non-objsafe descendant of [SomeLocalExecutor].
