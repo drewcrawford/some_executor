@@ -69,10 +69,10 @@ where
     phantom: PhantomData<Executor>,
     poll_after: std::time::Instant,
     //these task_local properties optional so we can take/replace them
-    hint: Hint,
     label: Option<String>,
-    priority: Priority,
-    task_id: TaskID,
+    priority: Priority, //copy, so that's boring
+    hint: Hint, //copy, also boring
+    task_id: TaskID, //boring
 }
 
 /**
@@ -399,12 +399,13 @@ where
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let (future, sender, mut label) = unsafe {
+        let (future, sender, mut label, priority) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.task);
             let sender = Pin::new_unchecked(&mut unchecked.sender);
             let label = Pin::new_unchecked(&mut unchecked.label);
-            (future, sender, label)
+            let priority = Pin::new_unchecked(&mut unchecked.priority);
+            (future, sender, label, priority)
         };
 
         if sender.observer_cancelled() {
@@ -417,6 +418,9 @@ where
             TASK_LABEL.with_mut(|l| {
                 *l = Some(label.take().expect("Label not set"));
             });
+            TASK_PRIORITY.with_mut(|p| {
+                *p = Some(*priority.get_mut());
+            });
         }
         let r = future.poll(cx);
         //after poll, we need to set our properties
@@ -424,6 +428,9 @@ where
             TASK_LABEL.with_mut(|l| {
                 let read_label = l.take().expect("Label not set");
                 *label = Some(read_label);
+            });
+            TASK_PRIORITY.with_mut(|p| {
+                *p = None;
             });
         }
         match r {
