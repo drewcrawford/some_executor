@@ -263,6 +263,12 @@ impl<T: 'static> ObserverNotified<T> for Box<dyn ObserverNotified<T>> {
     }
 }
 
+impl<T: 'static> ObserverNotified<T> for Box<dyn ObserverNotified<T> + Send> {
+    fn notify(&mut self, value: &T) {
+        (**self).notify(value);
+    }
+}
+
 
 
 /*

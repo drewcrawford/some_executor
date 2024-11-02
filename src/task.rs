@@ -349,6 +349,7 @@ impl<F: Future, N> Task<F, N> {
 }
 
 
+
 impl<F, ONotifier, ENotifier> Future for SpawnedTask<F, ONotifier, ENotifier>
 where
     F: Future,
