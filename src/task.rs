@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::task::{Poll};
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
-use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender, ObserverTypeEraser};
+use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
 use crate::{task_local, DynExecutor, SomeLocalExecutor, Priority, SomeExecutor};
 use crate::local::UnsafeErasedLocalExecutor;
 
@@ -753,8 +753,13 @@ mod tests {
                 observer
             }
 
-            fn spawn_local_objsafe_async(&mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>>> {
-                Box::new(async { todo!() })
+            fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 's> {
+                Box::new(async {
+                    let (spawn, observer) = task.spawn_local_objsafe(self);
+                    let pinned_spawn = Box::pin(spawn);
+                    self.0.push(pinned_spawn);
+                    observer
+                })
             }
 
 

@@ -259,26 +259,6 @@ impl<'executor> ExecutorNotified for Box<dyn ExecutorNotified + Send> {
 }
 
 
-pub(crate) struct ObserverTypeEraser<T, O> {
-    underlying: O,
-    _phantom: std::marker::PhantomData<T>
-}
-
-impl<T, O> ObserverTypeEraser<T,O> {
-    pub(crate) fn new(underlying: O) -> Self where O: ObserverNotified<T> {
-        Self { underlying, _phantom: std::marker::PhantomData }
-    }
-}
-
-impl<T, O> ObserverNotified<dyn Any> for ObserverTypeEraser<T,O> where O: ObserverNotified<T>,
-    //I don't know if we need these, but they are required by the compiler
-T: Unpin,
-T: 'static {
-    fn notify(&mut self, value: &dyn Any) {
-        self.underlying.notify(value.downcast_ref::<T>().expect("downcast failed"));
-    }
-}
-
 
 
 
