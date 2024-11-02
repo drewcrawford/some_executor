@@ -214,7 +214,7 @@ A non-objsafe descendant of [SomeLocalExecutor].
 This trait provides a more ergonomic interface, but is not object-safe.
 
 */
-pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor<'tasks> + Clone {}
+pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor<'tasks> {}
 
 
 
