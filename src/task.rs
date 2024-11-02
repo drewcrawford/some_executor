@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::task::{Poll};
 use crate::context::{TaskLocalImmutableFuture};
 use crate::hint::Hint;
-use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
+use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender, ObserverTypeEraser};
 use crate::{task_local, DynExecutor, SomeLocalExecutor, Priority, SomeExecutor};
 use crate::local::UnsafeErasedLocalExecutor;
 
@@ -274,7 +274,7 @@ impl<F: Future, N> Task<F, N> {
     */
     pub fn spawn<Executor: SomeExecutor>(mut self, executor: &mut Executor) -> (SpawnedTask<F, N, Executor::ExecutorNotifier>, Observer<F::Output, Executor::ExecutorNotifier>) {
         let cancellation = self.task_cancellation();
-        let some_notifier : Option<Executor::ExecutorNotifier> = executor.executor_notifier();
+        let some_notifier: Option<Executor::ExecutorNotifier> = executor.executor_notifier();
         let task_id = self.task_id();
         let (sender, receiver) = observer_channel(self.notifier.take(), some_notifier, cancellation, task_id);
         let scoped = TASK_EXECUTOR.scope_internal(Some(executor.clone_box()), self.future);
@@ -306,7 +306,7 @@ impl<F: Future, N> Task<F, N> {
         (spawned_task, receiver)
     }
 
-    pub fn spawn_objsafe(mut self, executor: &mut (dyn SomeExecutor<ExecutorNotifier = NoNotified> + 'static)) -> (SpawnedTask<F, N, Box<dyn ExecutorNotified + Send>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
+    pub fn spawn_objsafe(mut self, executor: &mut (dyn SomeExecutor<ExecutorNotifier=NoNotified> + 'static)) -> (SpawnedTask<F, N, Box<dyn ExecutorNotified + Send>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
         let cancellation = self.task_cancellation();
         let task_id = self.task_id();
         let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified + Send>);
@@ -323,31 +323,26 @@ impl<F: Future, N> Task<F, N> {
     }
 
     /**
-    Spawns the task onto a local executor
+    Spawns the task onto a local executor.
+
+    For this to work, we have to erase the output type to dyn Any.
     */
-    pub fn spawn_local_objsafe<'executor>(mut self,
-                                          /*
-                                          I don't really get why we can't spell DynLocalExecutor here, but there is some lifetime issue with it.  Let's be explicit:
-                                           */
-                                          executor: &mut dyn SomeLocalExecutor<ExecutorNotifier=NoNotified>) ->
-                                          (SpawnedLocalTask<F, N, Box<dyn SomeLocalExecutor<'executor, ExecutorNotifier=Box<dyn ExecutorNotified>>>>,
-                                           Observer<F::Output, Box<dyn ExecutorNotified>>) {
+    pub fn spawn_local_objsafe(mut self, executor: &mut (dyn SomeLocalExecutor<ExecutorNotifier=NoNotified> + 'static)) -> (SpawnedLocalTask<F, N, Box<dyn ExecutorNotified + Send>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
         let cancellation = self.task_cancellation();
         let task_id = self.task_id();
-        let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified>);
+        let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified + Send>);
         let (sender, receiver) = observer_channel(self.notifier.take(), boxed_executor_notifier, cancellation, task_id);
         let scoped = TASK_EXECUTOR.scope_internal(None, self.future);
-        let spawned_task: SpawnedLocalTask<F, N, Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>>> = SpawnedLocalTask {
-            executor: PhantomData,
+        let spawned_task = SpawnedLocalTask {
             task: scoped,
             sender,
             poll_after: self.poll_after,
             hint: self.hint,
+            executor: PhantomData,
         };
         (spawned_task, receiver)
     }
 }
-
 
 
 impl<F, ONotifier, ENotifier> Future for SpawnedTask<F, ONotifier, ENotifier>
@@ -523,6 +518,7 @@ where
     F: Future,
     ONotifier: ObserverNotified<F::Output>,
 {}
+
 
 
 /* boilerplates
@@ -751,8 +747,11 @@ mod tests {
                 }
             }
 
-            fn spawn_local_objsafe(&mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
-                todo!()
+            fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
+                let (spawn, observer) = task.spawn_local_objsafe(self);
+                let pinned_spawn = Box::pin(spawn);
+                self.0.push(pinned_spawn);
+                observer
             }
 
             fn spawn_local_objsafe_async(&mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>>> {
