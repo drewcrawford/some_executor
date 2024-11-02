@@ -402,14 +402,16 @@ where
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let (future, sender, mut label, priority, cancellation) = unsafe {
+        let (future, sender, mut label, priority,
+            cancellation, task_id) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.task);
             let sender = Pin::new_unchecked(&mut unchecked.sender);
             let label = Pin::new_unchecked(&mut unchecked.label);
             let priority = Pin::new_unchecked(&mut unchecked.priority);
             let cancellation = Pin::new_unchecked(&mut unchecked.cancellation);
-            (future, sender, label, priority, cancellation)
+            let task_id = unchecked.task_id;
+            (future, sender, label, priority, cancellation, task_id)
         };
 
         if sender.observer_cancelled() {
@@ -429,6 +431,9 @@ where
             TASK_PRIORITY.with_mut(|p| {
                 *p = Some(*priority.get_mut());
             });
+            TASK_ID.with_mut(|i| {
+                *i = Some(task_id);
+            });
 
 
         }
@@ -445,6 +450,9 @@ where
             });
             TASK_PRIORITY.with_mut(|p| {
                 *p = None;
+            });
+            TASK_ID.with_mut(|i| {
+                *i = None;
             });
         }
         match r {
