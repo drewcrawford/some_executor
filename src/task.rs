@@ -214,7 +214,7 @@ task_local! {
 }
 
 thread_local! {
-    static TASK_LOCAL_EXECUTOR: RefCell<Option<Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>>>> = RefCell::new(None);
+    static TASK_LOCAL_EXECUTOR: RefCell<Option<Box<dyn SomeLocalExecutor<'static, ExecutorNotifier=Box<dyn ExecutorNotified>>>>> = RefCell::new(None);
 }
 
 impl<F: Future, N> Task<F, N> {
@@ -291,7 +291,7 @@ impl<F: Future, N> Task<F, N> {
     /**
     Spawns the task onto a local executor
     */
-    pub fn spawn_local<'executor, Executor: SomeLocalExecutor>(mut self, executor: &mut Executor) -> (SpawnedLocalTask<F, N, <Executor as SomeLocalExecutor>::ExecutorNotifier>, Observer<F::Output, Executor::ExecutorNotifier>) {
+    pub fn spawn_local<'executor, Executor: SomeLocalExecutor<'executor>>(mut self, executor: &mut Executor) -> (SpawnedLocalTask<F, N, Executor::ExecutorNotifier>, Observer<F::Output, Executor::ExecutorNotifier>) {
         let cancellation = self.task_cancellation();
         let task_id = self.task_id();
         let (sender, receiver) = observer_channel(self.notifier.take(), executor.executor_notifier(), cancellation, task_id);
@@ -330,7 +330,7 @@ impl<F: Future, N> Task<F, N> {
                                           I don't really get why we can't spell DynLocalExecutor here, but there is some lifetime issue with it.  Let's be explicit:
                                            */
                                           executor: &mut dyn SomeLocalExecutor<ExecutorNotifier=NoNotified>) ->
-                                          (SpawnedLocalTask<F, N, Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>>>,
+                                          (SpawnedLocalTask<F, N, Box<dyn SomeLocalExecutor<'executor, ExecutorNotifier=Box<dyn ExecutorNotified>>>>,
                                            Observer<F::Output, Box<dyn ExecutorNotified>>) {
         let cancellation = self.task_cancellation();
         let task_id = self.task_id();
@@ -382,7 +382,7 @@ where
     }
 }
 
-impl<'executor, F, ONotifier, Executor: SomeLocalExecutor> SpawnedLocalTask<F, ONotifier, Executor>
+impl<'executor, F, ONotifier, Executor: SomeLocalExecutor<'executor>> SpawnedLocalTask<F, ONotifier, Executor>
 where
     F: Future,
     ONotifier: ObserverNotified<F::Output>,
@@ -719,16 +719,21 @@ mod tests {
     #[test]
     fn test_local_executor() {
 
-        struct ExLocalExecutor<'executor>(Vec<Pin<Box<dyn DynLocalSpawnedTask + 'executor>>>);
+        struct ExLocalExecutor<'future>(Vec<Pin<Box<dyn DynLocalSpawnedTask + 'future>>>);
 
-        impl<'executor> SomeLocalExecutor for ExLocalExecutor<'executor> {
+        impl<'existing_tasks,'new_task> SomeLocalExecutor<'new_task> for ExLocalExecutor<'existing_tasks> where 'new_task: 'existing_tasks {
             type ExecutorNotifier = NoNotified;
 
-            fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F,Notifier>) -> Observer<F::Output,Self::ExecutorNotifier> where Self: Sized
+            fn spawn_local<'a, F: Future, Notifier: ObserverNotified<F::Output>>(&'a mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
+            where
+                Self: Sized,
+                F: 'new_task,
+            /* I am a little uncertain whether this is really required */
+                <F as Future>::Output: Unpin
             {
-                let spawn = task.spawn_local(self);
+                let (spawn,observer)  = task.spawn_local(self);
                 let pinned_spawn = Box::pin(spawn);
-                // self.0.push(pinned_spawn);
+                self.0.push(pinned_spawn);
                 todo!()
                 // observer
             }

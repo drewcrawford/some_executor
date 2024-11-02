@@ -151,7 +151,7 @@ pub trait SomeExecutorExt: SomeExecutor + Clone {}
 /**
 A trait for executors that can spawn tasks onto the local thread.
 */
-pub trait SomeLocalExecutor {
+pub trait SomeLocalExecutor<'future> {
     type ExecutorNotifier: ExecutorNotified;
     /**
     Spawns a future onto the runtime.
@@ -160,9 +160,10 @@ pub trait SomeLocalExecutor {
     - `task`: The task to spawn.
 
     */
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
+    fn spawn_local<'a, F: Future, Notifier: ObserverNotified<F::Output>>(&'a mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
     where
         Self: Sized,
+        F: 'future,
     /* I am a little uncertain whether this is really required */
         <F as Future>::Output: Unpin
     ;
@@ -213,7 +214,7 @@ A non-objsafe descendant of [SomeLocalExecutor].
 This trait provides a more ergonomic interface, but is not object-safe.
 
 */
-pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor + Clone {}
+pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor<'tasks> + Clone {}
 
 
 

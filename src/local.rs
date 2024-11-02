@@ -5,11 +5,11 @@ use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
 use crate::{DynONotifier, SomeLocalExecutor};
 use crate::task::Task;
 
-pub(crate) struct SomeLocalExecutorErasingNotifier<'underlying, UnderlyingExecutor: SomeLocalExecutor + ?Sized> {
+pub(crate) struct SomeLocalExecutorErasingNotifier<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying> + ?Sized> {
     executor: &'underlying mut UnderlyingExecutor,
 }
 
-impl <'underlying, UnderlyingExecutor: SomeLocalExecutor> SomeLocalExecutorErasingNotifier<'underlying, UnderlyingExecutor> {
+impl <'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalExecutorErasingNotifier<'underlying, UnderlyingExecutor> {
     pub(crate) fn new(executor: &'underlying mut UnderlyingExecutor) -> Self {
         Self {
             executor
@@ -17,13 +17,15 @@ impl <'underlying, UnderlyingExecutor: SomeLocalExecutor> SomeLocalExecutorErasi
     }
 }
 
-impl<'executor, UnderlyingExecutor: SomeLocalExecutor> SomeLocalExecutor for SomeLocalExecutorErasingNotifier<'executor, UnderlyingExecutor> {
+impl<'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>> SomeLocalExecutor<'executor> for SomeLocalExecutorErasingNotifier<'executor, UnderlyingExecutor> {
     type ExecutorNotifier = Box<dyn ExecutorNotified>;
 
     fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
     where
         Self: Sized,
-        <F as Future>::Output: Unpin,
+        F: 'executor,
+    /* I am a little uncertain whether this is really required */
+        <F as Future>::Output: Unpin
     /*I am a little uncertain as to whether this is really required */
     {
         let o = self.executor.spawn_local(task);
@@ -61,7 +63,7 @@ impl<'executor, UnderlyingExecutor: SomeLocalExecutor> SomeLocalExecutor for Som
 }
 
 pub (crate) struct UnsafeErasedLocalExecutor {
-    underlying: *mut dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>,
+    underlying: *mut dyn SomeLocalExecutor<'static, ExecutorNotifier=Box<dyn ExecutorNotified>>,
 }
 
 impl UnsafeErasedLocalExecutor {
@@ -78,20 +80,25 @@ impl UnsafeErasedLocalExecutor {
         }
     }
 
-    fn executor(&mut self) -> &mut dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>> {
-        //safety: see constructor function
+    fn executor(&mut self) -> &mut (dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>> + '_) {
+        // Safety: `underlying` is assumed to be valid for the duration of `&mut self`
         unsafe {
-            &mut *self.underlying
+            std::mem::transmute::<
+                &mut dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>,
+                &mut dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>
+            >(&mut *self.underlying)
         }
     }
 }
 
-impl SomeLocalExecutor for UnsafeErasedLocalExecutor {
+impl<'a> SomeLocalExecutor<'a> for UnsafeErasedLocalExecutor {
     type ExecutorNotifier = Box<dyn ExecutorNotified>;
 
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
+    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
     where
         Self: Sized,
+        F: 'a,
+    /* I am a little uncertain whether this is really required */
         <F as Future>::Output: Unpin
     {
         unimplemented!("Not implemented for erased executor; use objsafe method")
@@ -105,7 +112,8 @@ impl SomeLocalExecutor for UnsafeErasedLocalExecutor {
     }
 
     fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
-        self.executor().spawn_local_objsafe(task)
+        let ex = self.executor();
+        ex.spawn_local_objsafe(task)
     }
 
     fn spawn_local_objsafe_async<'executor>(&'executor mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<DynONotifier>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 'executor> {

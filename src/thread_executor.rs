@@ -6,7 +6,7 @@ use crate::observer::ExecutorNotified;
 
 thread_local! {
     static THREAD_EXECUTOR: RefCell<Option<Box<DynExecutor>>> = RefCell::new(None);
-    static THREAD_LOCAL_EXECUTOR: RefCell<Option<Box<dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>>> = RefCell::new(None);
+    static THREAD_LOCAL_EXECUTOR: RefCell<Option<Box<dyn SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn ExecutorNotified>>>>> = RefCell::new(None);
 }
 
 /**
@@ -39,7 +39,7 @@ pub fn thread_local_executor<R>(c: impl FnOnce(Option<&dyn SomeLocalExecutor<Exe
 /**
 Sets the local executor for the current thread.
 */
-pub fn set_thread_local_executor(runtime: Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>>) {
+pub fn set_thread_local_executor(runtime: Box<dyn SomeLocalExecutor<'static, ExecutorNotifier=Box<dyn ExecutorNotified>>>) {
     THREAD_LOCAL_EXECUTOR.with(|e| {
         *e.borrow_mut() = Some(runtime);
     });
