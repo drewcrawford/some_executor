@@ -218,7 +218,16 @@ thread_local! {
 }
 
 impl<F: Future, N> Task<F, N> {
-    pub fn new(label: String, future: F, configuration: Configuration, notifier: Option<N>) -> Self
+    /**
+    Creates a new task.
+
+    # Parameters
+    - `label`: A human-readable label for the task.
+    - `future`: The future to run.
+    - `configuration`: Configuration for the task.
+    - `notifier`: An observer to notify when the task completes.  If there is no notifier, consider using [Self::without_notifications] instead.
+*/
+    pub fn with_notifications(label: String, future: F, configuration: Configuration, notifier: Option<N>) -> Self
     where
         F: Future,
     {
@@ -228,7 +237,7 @@ impl<F: Future, N> Task<F, N> {
         let apply_priority = TASK_PRIORITY.scope_internal(configuration.priority, apply_label);
         let apply_cancellation = IS_CANCELLED.scope_internal(InFlightTaskCancellation(Arc::new(AtomicBool::new(false))), apply_priority);
         let apply = TASK_ID.scope_internal(task_id, apply_cancellation);
-        assert_ne!(task_id.0, 0, "TaskID overflow");
+        assert_ne!(task_id.0, u64::MAX, "TaskID overflow");
         Task {
             future: apply,
             hint: configuration.hint,
@@ -236,7 +245,6 @@ impl<F: Future, N> Task<F, N> {
             notifier,
         }
     }
-
 
     pub fn hint(&self) -> Hint {
         self.hint
@@ -344,6 +352,28 @@ impl<F: Future, N> Task<F, N> {
     }
 }
 
+impl<F: Future> Task<F, NoNotified> {
+    /**
+    Spawns a task, without performing inline notification.
+
+    Use this constructor when there are no cancellation notifications desired.
+
+    # Parameters
+    - `label`: A human-readable label for the task.
+    - `future`: The future to run.
+    - `configuration`: Configuration for the task.
+
+    # Details
+
+    Use of this function is equivalent to calling [Task::with_notifications] with a None notifier.
+
+    This function avoids the need to specify the type parameter to [Task].
+    */
+    pub fn without_notifications(label: String, future: F, configuration: Configuration) -> Self {
+        Task::with_notifications(label, future, configuration, None)
+    }
+}
+
 
 impl<F, ONotifier, ENotifier> Future for SpawnedTask<F, ONotifier, ENotifier>
 where
@@ -430,7 +460,7 @@ where
 
 impl Task<Pin<Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>>, Box<dyn ObserverNotified<Box<dyn Any + Send>> + Send>> {
     pub fn new_objsafe(label: String, future: Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>, configuration: Configuration, notifier: Option<Box<dyn ObserverNotified<Box<dyn Any + Send>> + Send>>) -> Self {
-        Self::new(label, Box::into_pin(future), configuration, notifier)
+        Self::with_notifications(label, Box::into_pin(future), configuration, notifier)
     }
 }
 
@@ -552,7 +582,7 @@ impl Future for DefaultFuture {
 }
 impl Default for Task<DefaultFuture, NoNotified> {
     fn default() -> Self {
-        Task::new("".to_string(), DefaultFuture, Configuration::default(), None)
+        Task::with_notifications("".to_string(), DefaultFuture, Configuration::default(), None)
     }
 }
 
@@ -562,7 +592,7 @@ Support from for the Future type
 
 impl<F: Future, N> From<F> for Task<F, N> {
     fn from(future: F) -> Self {
-        Task::new("".to_string(), future, Configuration::default(), None)
+        Task::with_notifications("".to_string(), future, Configuration::default(), None)
     }
 }
 
@@ -648,6 +678,16 @@ mod tests {
     use crate::observer::{ExecutorNotified, NoNotified, Observer, ObserverNotified};
     use crate::task::{DynLocalSpawnedTask, SpawnedTask, Task};
     use crate::{task_local, SomeExecutor, SomeLocalExecutor};
+
+    #[test] fn test_create_task() {
+        let task: Task<_,NoNotified> = Task::with_notifications("test".to_string(), async {}, Default::default(), None);
+        assert_eq!(task.label(), "test");
+    }
+
+    #[test] fn test_create_no_notify() {
+        let t = Task::without_notifications("test".to_string(), async {}, Default::default());
+        assert_eq!(t.label(), "test");
+    }
     #[test]
     fn test_send() {
         task_local!(
@@ -710,6 +750,7 @@ mod tests {
             assert_unpin(spawned);
         }
     }
+
 
 
     #[test]
