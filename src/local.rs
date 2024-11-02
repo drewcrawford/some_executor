@@ -35,6 +35,7 @@ impl<'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>> SomeLocalExecu
     fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
     where
         Self: Sized,
+        F: 'executor
     {
         async {
             let o = self.executor.spawn_local_async(task).await;
