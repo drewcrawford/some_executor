@@ -72,6 +72,7 @@ where
     //these task_local properties optional so we can take/replace them
     label: Option<String>,
     cancellation: Option<InFlightTaskCancellation>,
+    executor: Option<Box<dyn SomeExecutor<ExecutorNotifier=NoNotified>>>,
     priority: Priority, //copy,so no need to repair/replace them, boring
     task_id: TaskID, //boring
 }
@@ -293,6 +294,7 @@ impl<F: Future, N> Task<F, N> {
         let some_notifier: Option<Executor::ExecutorNotifier> = executor.executor_notifier();
         let task_id = self.task_id();
         let (sender, receiver) = observer_channel(self.notifier.take(), some_notifier, cancellation.clone(), task_id);
+        let boxed_executor = executor.clone_box();
         let spawned_task = SpawnedTask {
             task: self.future,
             sender,
@@ -303,6 +305,7 @@ impl<F: Future, N> Task<F, N> {
             priority: self.priority,
             task_id,
             cancellation: Some(cancellation),
+            executor: Some(boxed_executor),
         };
         (spawned_task, receiver)
     }
@@ -330,6 +333,7 @@ impl<F: Future, N> Task<F, N> {
     pub fn spawn_objsafe(mut self, executor: &mut (dyn SomeExecutor<ExecutorNotifier=NoNotified> + 'static)) -> (SpawnedTask<F, N, Box<dyn ExecutorNotified + Send>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
         let cancellation = InFlightTaskCancellation::default();
         let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified + Send>);
+        let boxed_executor = executor.clone_box();
         let (sender, receiver) = observer_channel(self.notifier.take(), boxed_executor_notifier, cancellation.clone(), self.task_id);
         let spawned_task = SpawnedTask {
             task: self.future,
@@ -341,6 +345,7 @@ impl<F: Future, N> Task<F, N> {
             priority: self.priority,
             task_id: self.task_id,
             cancellation: Some(cancellation),
+            executor: Some(boxed_executor),
         };
         (spawned_task, receiver)
     }
@@ -403,7 +408,7 @@ where
         assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
         let (future, sender, mut label, priority,
-            cancellation, task_id) = unsafe {
+            cancellation, task_id,executor) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.task);
             let sender = Pin::new_unchecked(&mut unchecked.sender);
@@ -411,7 +416,8 @@ where
             let priority = Pin::new_unchecked(&mut unchecked.priority);
             let cancellation = Pin::new_unchecked(&mut unchecked.cancellation);
             let task_id = unchecked.task_id;
-            (future, sender, label, priority, cancellation, task_id)
+            let executor = Pin::new_unchecked(&mut unchecked.executor);
+            (future, sender, label, priority, cancellation, task_id, executor)
         };
 
         if sender.observer_cancelled() {
@@ -421,6 +427,7 @@ where
         //before poll, we need to set our properties
         let label = label.get_mut();
         let cancellation = cancellation.get_mut();
+        let executor = executor.get_mut();
         unsafe {
             TASK_LABEL.with_mut(|l| {
                 *l = Some(label.take().expect("Label not set (is task being polled already?)"));
@@ -433,6 +440,9 @@ where
             });
             TASK_ID.with_mut(|i| {
                 *i = Some(task_id);
+            });
+            TASK_EXECUTOR.with_mut(|e| {
+                *e = Some(Some(executor.take().expect("Executor not set (is task being polled already?)")));
             });
 
 
@@ -454,6 +464,10 @@ where
             TASK_ID.with_mut(|i| {
                 *i = None;
             });
+            TASK_EXECUTOR.with_mut(|e| {
+                let read_executor = e.take().expect("Executor not set").expect("Executor not set");
+                *executor = Some(read_executor);
+            })
         }
         match r {
             Poll::Ready(r) => {
