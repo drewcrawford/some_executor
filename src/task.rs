@@ -68,8 +68,9 @@ where
     sender: ObserverSender<F::Output, ONotifier>,
     phantom: PhantomData<Executor>,
     poll_after: std::time::Instant,
+    //these task_local properties optional so we can take/replace them
     hint: Hint,
-    label: String,
+    label: Option<String>,
     priority: Priority,
     task_id: TaskID,
 }
@@ -113,7 +114,7 @@ impl<F: Future, ONotifier, ENotifier> SpawnedTask<F, ONotifier, ENotifier> {
     }
 
     pub fn label(&self) -> &str {
-        self.label.as_ref()
+        self.label.as_ref().expect("Future is polling")
     }
 
     pub fn priority(&self) -> priority::Priority {
@@ -297,7 +298,7 @@ impl<F: Future, N> Task<F, N> {
             phantom: PhantomData,
             poll_after: self.poll_after,
             hint: self.hint,
-            label: self.label,
+            label: Some(self.label),
             priority: self.priority,
             task_id,
         };
@@ -334,7 +335,7 @@ impl<F: Future, N> Task<F, N> {
             phantom: PhantomData,
             poll_after: self.poll_after,
             hint: self.hint,
-            label: self.label,
+            label: Some(self.label),
             priority: self.priority,
             task_id: self.task_id,
         };
@@ -398,18 +399,34 @@ where
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let (future, sender) = unsafe {
+        let (future, sender, mut label) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.task);
             let sender = Pin::new_unchecked(&mut unchecked.sender);
-            (future, sender)
+            let label = Pin::new_unchecked(&mut unchecked.label);
+            (future, sender, label)
         };
 
         if sender.observer_cancelled() {
             //we don't really need to notify the observer here.  Also the notifier will run upon drop.
             return Poll::Ready(());
         }
-        match future.poll(cx) {
+        //before poll, we need to set our properties
+        let label = label.get_mut();
+        unsafe {
+            TASK_LABEL.with_mut(|l| {
+                *l = Some(label.take().expect("Label not set"));
+            });
+        }
+        let r = future.poll(cx);
+        //after poll, we need to set our properties
+        unsafe {
+            TASK_LABEL.with_mut(|l| {
+                let read_label = l.take().expect("Label not set");
+                *label = Some(read_label);
+            });
+        }
+        match r {
             Poll::Ready(r) => {
                 sender.get_mut().send(r);
                 Poll::Ready(())

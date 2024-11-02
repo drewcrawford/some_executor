@@ -405,6 +405,22 @@ impl<T: 'static> LocalKeyImmutable<T> {
         })
     }
 
+    /**
+    Accesses the underlying task-local inside the closure, mutably.
+
+    # Safety
+    This is unsafe because the type guarantees the type is immutable, but you are mutating it
+    outside of the scope of the task-local.
+    */
+    pub(crate) unsafe fn with_mut<F, R>(&'static self, f: F) -> R
+    where
+        F: FnOnce(&mut Option<T>) -> R {
+        self.0.with(|slot| {
+            let mut value = slot.borrow_mut();
+            f(&mut value)
+        })
+    }
+
 }
 /*
 boilerplates
