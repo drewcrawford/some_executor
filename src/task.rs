@@ -68,10 +68,11 @@ where
     sender: ObserverSender<F::Output, ONotifier>,
     phantom: PhantomData<Executor>,
     poll_after: std::time::Instant,
+    hint: Hint,
     //these task_local properties optional so we can take/replace them
     label: Option<String>,
-    priority: Priority, //copy, so that's boring
-    hint: Hint, //copy, also boring
+    cancellation: Option<InFlightTaskCancellation>,
+    priority: Priority, //copy,so no need to repair/replace them, boring
     task_id: TaskID, //boring
 }
 
@@ -291,7 +292,7 @@ impl<F: Future, N> Task<F, N> {
         let cancellation = InFlightTaskCancellation::default();
         let some_notifier: Option<Executor::ExecutorNotifier> = executor.executor_notifier();
         let task_id = self.task_id();
-        let (sender, receiver) = observer_channel(self.notifier.take(), some_notifier, cancellation, task_id);
+        let (sender, receiver) = observer_channel(self.notifier.take(), some_notifier, cancellation.clone(), task_id);
         let spawned_task = SpawnedTask {
             task: self.future,
             sender,
@@ -301,6 +302,7 @@ impl<F: Future, N> Task<F, N> {
             label: Some(self.label),
             priority: self.priority,
             task_id,
+            cancellation: Some(cancellation),
         };
         (spawned_task, receiver)
     }
@@ -328,7 +330,7 @@ impl<F: Future, N> Task<F, N> {
     pub fn spawn_objsafe(mut self, executor: &mut (dyn SomeExecutor<ExecutorNotifier=NoNotified> + 'static)) -> (SpawnedTask<F, N, Box<dyn ExecutorNotified + Send>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
         let cancellation = InFlightTaskCancellation::default();
         let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified + Send>);
-        let (sender, receiver) = observer_channel(self.notifier.take(), boxed_executor_notifier, cancellation, self.task_id);
+        let (sender, receiver) = observer_channel(self.notifier.take(), boxed_executor_notifier, cancellation.clone(), self.task_id);
         let spawned_task = SpawnedTask {
             task: self.future,
             sender,
@@ -338,6 +340,7 @@ impl<F: Future, N> Task<F, N> {
             label: Some(self.label),
             priority: self.priority,
             task_id: self.task_id,
+            cancellation: Some(cancellation),
         };
         (spawned_task, receiver)
     }
@@ -399,13 +402,14 @@ where
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let (future, sender, mut label, priority) = unsafe {
+        let (future, sender, mut label, priority, cancellation) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.task);
             let sender = Pin::new_unchecked(&mut unchecked.sender);
             let label = Pin::new_unchecked(&mut unchecked.label);
             let priority = Pin::new_unchecked(&mut unchecked.priority);
-            (future, sender, label, priority)
+            let cancellation = Pin::new_unchecked(&mut unchecked.cancellation);
+            (future, sender, label, priority, cancellation)
         };
 
         if sender.observer_cancelled() {
@@ -414,13 +418,19 @@ where
         }
         //before poll, we need to set our properties
         let label = label.get_mut();
+        let cancellation = cancellation.get_mut();
         unsafe {
             TASK_LABEL.with_mut(|l| {
-                *l = Some(label.take().expect("Label not set"));
+                *l = Some(label.take().expect("Label not set (is task being polled already?)"));
+            });
+            IS_CANCELLED.with_mut(|c| {
+                *c = Some(cancellation.take().expect("Cancellation not set (is task being polled already?)"));
             });
             TASK_PRIORITY.with_mut(|p| {
                 *p = Some(*priority.get_mut());
             });
+
+
         }
         let r = future.poll(cx);
         //after poll, we need to set our properties
@@ -428,6 +438,10 @@ where
             TASK_LABEL.with_mut(|l| {
                 let read_label = l.take().expect("Label not set");
                 *label = Some(read_label);
+            });
+            IS_CANCELLED.with_mut(|c| {
+                let read_cancellation = c.take().expect("Cancellation not set");
+                *cancellation = Some(read_cancellation);
             });
             TASK_PRIORITY.with_mut(|p| {
                 *p = None;
