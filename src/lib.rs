@@ -103,7 +103,7 @@ pub trait SomeExecutor: Send + Sync {
     # Implementation notes
     Implementations should generally ensure that a dlog-context is available to the future.
     */
-    fn spawn<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
+    fn spawn<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
     where
         Self: Sized,
         F::Output: Send;
@@ -114,7 +114,7 @@ pub trait SomeExecutor: Send + Sync {
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
     */
-    fn spawn_async<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>> + Send + 'static
+    fn spawn_async<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>> + Send + 'static
     where
         Self: Sized,
         F::Output: Send;
