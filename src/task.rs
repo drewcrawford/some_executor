@@ -317,7 +317,7 @@ impl<F: Future, N> Task<F, N> {
     /**
     Spawns the task onto a local executor
     */
-    pub fn spawn_local<'executor, Executor: SomeLocalExecutor<'executor>>(mut self, executor: &mut Executor) -> (SpawnedLocalTask<F, N, Executor::ExecutorNotifier>, Observer<F::Output, Executor::ExecutorNotifier>) {
+    pub fn spawn_local<'executor, Executor: SomeLocalExecutor<'executor>>(mut self, executor: &mut Executor) -> (SpawnedLocalTask<F, N, Executor>, Observer<F::Output, Executor::ExecutorNotifier>) {
         let cancellation = InFlightTaskCancellation::default();
         let task_id = self.task_id();
         let (sender, receiver) = observer_channel(self.notifier.take(), executor.executor_notifier(), cancellation.clone(), task_id);
@@ -360,7 +360,7 @@ impl<F: Future, N> Task<F, N> {
 
     For this to work, we have to erase the output type to dyn Any.
     */
-    pub fn spawn_local_objsafe(mut self, executor: &mut (dyn SomeLocalExecutor<ExecutorNotifier=NoNotified>)) -> (SpawnedLocalTask<F, N, Box<dyn ExecutorNotified>>, Observer<F::Output, Box<dyn ExecutorNotified>>) {
+    pub fn spawn_local_objsafe<'exec>(mut self, executor: &mut (dyn SomeLocalExecutor<'exec, ExecutorNotifier=NoNotified>)) -> (SpawnedLocalTask<F, N, Box<dyn SomeLocalExecutor<'exec, ExecutorNotifier=NoNotified>>>, Observer<F::Output, Box<dyn ExecutorNotified>>) {
         let cancellation = InFlightTaskCancellation::default();
         let task_id = self.task_id();
         let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified>);
