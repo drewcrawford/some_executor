@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use crate::task::{InFlightTaskCancellation, TaskID};
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
 pub enum Observation<T> {
     /**
     The task is pending.
