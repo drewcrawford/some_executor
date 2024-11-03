@@ -1,23 +1,26 @@
 use std::any::Any;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::pin::Pin;
 use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
 use crate::{SomeLocalExecutor};
 use crate::task::Task;
 
-pub(crate) struct SomeLocalExecutorErasingNotifier<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying> + ?Sized> {
-    executor: &'underlying mut UnderlyingExecutor,
+pub(crate) struct SomeLocalExecutorErasingNotifier<'borrow, 'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying> + ?Sized> {
+    executor: &'borrow mut UnderlyingExecutor,
+    _phantom: PhantomData<&'underlying ()>
 }
 
-impl <'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalExecutorErasingNotifier<'underlying, UnderlyingExecutor> {
-    pub(crate) fn new(executor: &'underlying mut UnderlyingExecutor) -> Self {
+impl <'borrow, 'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalExecutorErasingNotifier<'borrow, 'underlying, UnderlyingExecutor> {
+    pub(crate) fn new(executor: &'borrow mut UnderlyingExecutor) -> Self {
         Self {
-            executor
+            executor,
+            _phantom: PhantomData
         }
     }
 }
 
-impl<'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>> SomeLocalExecutor<'executor> for SomeLocalExecutorErasingNotifier<'executor, UnderlyingExecutor> {
+impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>> SomeLocalExecutor<'executor> for SomeLocalExecutorErasingNotifier<'borrow, 'executor, UnderlyingExecutor> {
     type ExecutorNotifier = Box<dyn ExecutorNotified>;
 
     fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
