@@ -684,8 +684,8 @@ impl Configuration {
 /**
 ObjSafe type-erased wrapper for [SpawnedLocalTask].
 */
-pub trait DynLocalSpawnedTask {
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &mut dyn SomeLocalExecutor<ExecutorNotifier=NoNotified>) -> std::task::Poll<()>;
+pub trait DynLocalSpawnedTask<Executor> {
+    fn poll<'executor>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'executor mut Executor) -> std::task::Poll<()>;
     fn poll_after(&self) -> std::time::Instant;
     fn label(&self) -> &str;
 
@@ -693,12 +693,14 @@ pub trait DynLocalSpawnedTask {
     fn priority(&self) -> priority::Priority;
 }
 
-impl<'executor, F, ONotifier, Executor> DynLocalSpawnedTask for SpawnedLocalTask<F, ONotifier, Executor>
+impl<'executor, F, ONotifier, Executor> DynLocalSpawnedTask<Executor> for SpawnedLocalTask<F, ONotifier, Executor>
 where
     F: Future,
+    Executor: SomeLocalExecutor<'executor>,
+    ONotifier: ObserverNotified<F::Output>,
 {
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>, executor: &mut dyn SomeLocalExecutor<ExecutorNotifier=NoNotified>) -> Poll<()> {
-        self.poll(cx, executor)
+    fn poll<'ex>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'ex mut Executor) -> std::task::Poll<()> {
+        SpawnedLocalTask::poll(self, cx, executor)
     }
 
     fn poll_after(&self) -> std::time::Instant {
@@ -924,7 +926,7 @@ mod tests {
     #[test]
     fn test_local_executor() {
 
-        struct ExLocalExecutor<'future>(Vec<Pin<Box<dyn DynLocalSpawnedTask + 'future>>>);
+        struct ExLocalExecutor<'future>(Vec<Pin<Box<dyn DynLocalSpawnedTask<ExLocalExecutor<'future>> + 'future>>>);
 
         impl<'existing_tasks,'new_task> SomeLocalExecutor<'new_task> for ExLocalExecutor<'existing_tasks> where 'new_task: 'existing_tasks {
             type ExecutorNotifier = NoNotified;

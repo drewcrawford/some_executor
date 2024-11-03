@@ -1,5 +1,6 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
+use std::any::Any;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use crate::task::{InFlightTaskCancellation, TaskID};
@@ -222,6 +223,12 @@ pub struct NoNotified;
 impl<T> ObserverNotified<T> for NoNotified {
     fn notify(&mut self, _value: &T) {
         panic!("NoNotified should not be used");
+    }
+}
+//support unboxing
+impl ObserverNotified<Box<(dyn std::any::Any + 'static)>> for Box<dyn ObserverNotified<(dyn std::any::Any + 'static)>> {
+    fn notify(&mut self, value: &Box<(dyn Any + 'static)>) {
+        todo!()
     }
 }
 
