@@ -512,7 +512,7 @@ where
 {
     //I can't believe it's not future
 
-    pub fn poll<'bexecutor>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'bexecutor mut Executor) -> std::task::Poll<()> {
+    pub fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &mut Executor) -> std::task::Poll<()> {
         assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
         let (future, sender, label, priority,
