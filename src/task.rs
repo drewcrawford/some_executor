@@ -358,11 +358,23 @@ impl<F: Future, N> Task<F, N> {
     /**
     Spawns the task onto a local executor.
 
-    For this to work, we have to erase the output type to dyn Any.
+    # Objsafe
+
+    A word on exactly what 'objsafe' means in this context.  Objsafe means that whoever is spawning the task,
+    doesn't know which executor they are using, so they spawn onto an objsafe executor via the objsafe methods.
+
+    This has two implications.  First, we need to hide the executor type from the spawner.  However, we don't need
+    to hide it from the *executor*, since the executor knows what it is.  Accordingly this information is erased
+    with respect to types sent to the spawner, and not erased with respect to types sent
+    to the executor.
+
+    Second, the objsafe spawn method cannot have any generics.  Therefore, the future type is erased (boxed) and worse,
+    the output type is erased as well.  Accordingly we do not know what it is.
     */
-    pub fn spawn_local_objsafe<'exec>(mut self, executor: &mut (dyn SomeLocalExecutor<'exec, ExecutorNotifier=NoNotified>)) -> (SpawnedLocalTask<F, N, Box<dyn SomeLocalExecutor<'exec, ExecutorNotifier=NoNotified>>>, Observer<F::Output, Box<dyn ExecutorNotified>>) {
+    pub fn spawn_local_objsafe<'executor, Executor: SomeLocalExecutor<'executor>>(mut self, executor: &mut Executor) -> (SpawnedLocalTask<F, N, Executor>, Observer<F::Output, Box<dyn ExecutorNotified>>) {
         let cancellation = InFlightTaskCancellation::default();
         let task_id = self.task_id();
+
         let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified>);
         let (sender, receiver) = observer_channel(self.notifier.take(), boxed_executor_notifier, cancellation.clone(), task_id);
         let spawned_task = SpawnedLocalTask {
