@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use crate::task::{InFlightTaskCancellation, TaskID};
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Eq,Hash,Clone)]
 pub enum Observation<T> {
     /**
     The task is pending.
@@ -228,7 +228,8 @@ impl<T> ObserverNotified<T> for NoNotified {
 //support unboxing
 impl ObserverNotified<Box<(dyn std::any::Any + 'static)>> for Box<dyn ObserverNotified<(dyn std::any::Any + 'static)>> {
     fn notify(&mut self, value: &Box<(dyn Any + 'static)>) {
-        todo!()
+        let r = Box::as_mut(self);
+        r.notify(value);
     }
 }
 
@@ -273,7 +274,24 @@ boilerplates
 
 Observer - avoid copy/clone, Eq, Hash, default (channel), from/into, asref/asmut, deref, etc.
 
+Observation - we want clone, Eq, Hash.
+default is not obvious to me – could be pending but idk
+we could support from based on the value
  */
+impl <T> From<T> for  Observation<T> {
+    fn from(value: T) -> Self {
+        Observation::Ready(value)
+    }
+}
+
+impl <T> From<Observation<T>> for Option<T> {
+    fn from(value: Observation<T>) -> Self {
+        match value {
+            Observation::Ready(v) => Some(v),
+            _ => None
+        }
+    }
+}
 
 #[cfg(test)] mod tests {
     use crate::observer::{ExecutorNotified, Observer};

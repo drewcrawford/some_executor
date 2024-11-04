@@ -202,30 +202,30 @@ impl<V,F> TaskLocalFuture<V,F> {
 
 
 impl<V,F> TaskLocalImmutableFuture<V,F> {
-    /**
-    Gets access to the underlying value.
-    */
+    // /**
+    // Gets access to the underlying value.
+    // */
+    //
+    // pub(crate) fn get_val<R>(&self, closure:impl FnOnce(&V) -> R) -> R  {
+    //     match self.slot {
+    //         Some(ref value) => closure(value),
+    //         None => self.local_key.with(|value| {
+    //             closure(value.expect("Value neither in slot nor in thread-local"))
+    //         })
+    //     }
+    // }
 
-    pub(crate) fn get_val<R>(&self, closure:impl FnOnce(&V) -> R) -> R  {
-        match self.slot {
-            Some(ref value) => closure(value),
-            None => self.local_key.with(|value| {
-                closure(value.expect("Value neither in slot nor in thread-local"))
-            })
-        }
-    }
+    // pub(crate) fn get_future(&self) -> &F {
+    //     &self.future
+    // }
 
-    pub(crate) fn get_future(&self) -> &F {
-        &self.future
-    }
+    // pub (crate) fn get_future_mut(&mut self) -> &mut F {
+    //     &mut self.future
+    // }
 
-    pub (crate) fn get_future_mut(&mut self) -> &mut F {
-        &mut self.future
-    }
-
-    pub(crate) fn into_future(self) -> F {
-        self.future
-    }
+    // pub(crate) fn into_future(self) -> F {
+    //     self.future
+    // }
 
 }
 
