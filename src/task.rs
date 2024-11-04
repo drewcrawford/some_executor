@@ -451,6 +451,81 @@ impl<F: Future> Task<F, Infallible> {
     }
 }
 
+fn common_poll<'l,F,N,L>(future: Pin<&mut F>,sender: &mut ObserverSender<F::Output,N>, label: &mut Option<String>, cancellation:&mut Option<InFlightTaskCancellation>,
+                    executor: &mut Option<Box<dyn SomeExecutor<ExecutorNotifier = Infallible>>>,
+                    local_executor: Option<&mut L>,
+                    priority: Priority, task_id: TaskID, poll_after:Instant, cx: &mut Context) -> std::task::Poll<()>
+where F: Future,
+    N: ObserverNotified<F::Output>,
+    L: SomeLocalExecutor<'l>,
+{
+    assert!(poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
+    if sender.observer_cancelled() {
+        //we don't really need to notify the observer here.  Also the notifier will run upon drop.
+        return Poll::Ready(());
+    }
+    //before poll, we need to set our properties
+    unsafe {
+        TASK_LABEL.with_mut(|l| {
+            *l = Some(label.take().expect("Label not set (is task being polled already?)"));
+        });
+        IS_CANCELLED.with_mut(|c| {
+            *c = Some(cancellation.take().expect("Cancellation not set (is task being polled already?)"));
+        });
+        TASK_PRIORITY.with_mut(|p| {
+            *p = Some(priority);
+        });
+        TASK_ID.with_mut(|i| {
+            *i = Some(task_id);
+        });
+        TASK_EXECUTOR.with_mut(|e| {
+            *e = Some(Some(executor.take().expect("Executor not set (is task being polled already?)")));
+        });
+        if let Some(local_executor) = local_executor {
+            let mut erased_value_executor = Box::new(crate::local::SomeLocalExecutorErasingNotifier::new(local_executor)) as Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>> + '_>;
+            let erased_value_executor_ref = Box::as_mut(&mut erased_value_executor);
+            let erased_unsafe_executor = UnsafeErasedLocalExecutor::new(erased_value_executor_ref);
+            TASK_LOCAL_EXECUTOR.with(|e| {
+                e.borrow_mut().replace(Box::new(erased_unsafe_executor));
+            });
+        }
+    }
+    let r = future.poll(cx);
+    //after poll, we need to set our properties
+    unsafe {
+        TASK_LABEL.with_mut(|l| {
+            let read_label = l.take().expect("Label not set");
+            *label = Some(read_label);
+        });
+        IS_CANCELLED.with_mut(|c| {
+            let read_cancellation = c.take().expect("Cancellation not set");
+            *cancellation = Some(read_cancellation);
+        });
+        TASK_PRIORITY.with_mut(|p| {
+            *p = None;
+        });
+        TASK_ID.with_mut(|i| {
+            *i = None;
+        });
+        TASK_EXECUTOR.with_mut(|e| {
+            let read_executor = e.take().expect("Executor not set").expect("Executor not set");
+            *executor = Some(read_executor);
+        });
+        TASK_LOCAL_EXECUTOR.with_borrow_mut(|e| {
+            *e = None;
+        });
+    }
+    match r {
+        Poll::Ready(r) => {
+            sender.send(r);
+            Poll::Ready(())
+        }
+        Poll::Pending => {
+            Poll::Pending
+        }
+    }
+}
+
 
 impl<F, ONotifier, ENotifier> Future for SpawnedTask<F, ONotifier, ENotifier>
 where
@@ -460,8 +535,8 @@ where
     type Output = ();
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
+        let poll_after = self.poll_after();
         let (future, sender, label, priority,
             cancellation, task_id,executor) = unsafe {
             let unchecked = self.get_unchecked_mut();
@@ -475,70 +550,7 @@ where
             (future, sender, label, priority, cancellation, task_id, executor)
         };
 
-        if sender.observer_cancelled() {
-            //we don't really need to notify the observer here.  Also the notifier will run upon drop.
-            return Poll::Ready(());
-        }
-        //before poll, we need to set our properties
-        let label = label.get_mut();
-        let cancellation = cancellation.get_mut();
-        let executor = executor.get_mut();
-        unsafe {
-            TASK_LABEL.with_mut(|l| {
-                *l = Some(label.take().expect("Label not set (is task being polled already?)"));
-            });
-            IS_CANCELLED.with_mut(|c| {
-                *c = Some(cancellation.take().expect("Cancellation not set (is task being polled already?)"));
-            });
-            TASK_PRIORITY.with_mut(|p| {
-                *p = Some(*priority.get_mut());
-            });
-            TASK_ID.with_mut(|i| {
-                *i = Some(task_id);
-            });
-            TASK_EXECUTOR.with_mut(|e| {
-                *e = Some(Some(executor.take().expect("Executor not set (is task being polled already?)")));
-            });
-            TASK_LOCAL_EXECUTOR.with_borrow_mut(|e| {
-               *e = None;
-            });
-
-
-        }
-        let r = future.poll(cx);
-        //after poll, we need to set our properties
-        unsafe {
-            TASK_LABEL.with_mut(|l| {
-                let read_label = l.take().expect("Label not set");
-                *label = Some(read_label);
-            });
-            IS_CANCELLED.with_mut(|c| {
-                let read_cancellation = c.take().expect("Cancellation not set");
-                *cancellation = Some(read_cancellation);
-            });
-            TASK_PRIORITY.with_mut(|p| {
-                *p = None;
-            });
-            TASK_ID.with_mut(|i| {
-                *i = None;
-            });
-            TASK_EXECUTOR.with_mut(|e| {
-                let read_executor = e.take().expect("Executor not set").expect("Executor not set");
-                *executor = Some(read_executor);
-            });
-            TASK_LOCAL_EXECUTOR.with_borrow_mut(|e| {
-                *e = None;
-            });
-        }
-        match r {
-            Poll::Ready(r) => {
-                sender.get_mut().send(r);
-                Poll::Ready(())
-            }
-            Poll::Pending => {
-                Poll::Pending
-            }
-        }
+        common_poll::<_,_,Infallible>(future,sender.get_mut(),label.get_mut(),cancellation.get_mut(),executor.get_mut(),None,*priority.get_mut(),task_id,poll_after,cx)
     }
 }
 

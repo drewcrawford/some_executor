@@ -228,6 +228,38 @@ We don't support clone on LocalExecutor.  There are a few reasons:
 pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor<'tasks> {}
 
 
+impl<'future> SomeLocalExecutor<'future> for Infallible {
+    type ExecutorNotifier = Infallible;
+
+    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
+    where
+        Self: Sized,
+        F: 'future,
+        <F as Future>::Output: Unpin
+    {
+        unimplemented!()
+    }
+
+    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
+    where
+        Self: Sized,
+        F: 'future
+    {
+        async {unimplemented!()}
+    }
+
+    fn spawn_local_objsafe(&mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
+        unimplemented!()
+    }
+
+    fn spawn_local_objsafe_async<'s>(&'s mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 's> {
+        unimplemented!()
+    }
+
+    fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
+        unimplemented!()
+    }
+}
 
 
 #[cfg(test)]
