@@ -478,7 +478,7 @@ where
             *i = Some(task_id);
         });
         TASK_EXECUTOR.with_mut(|e| {
-            *e = Some(Some(executor.take().expect("Executor not set (is task being polled already?)")));
+            *e = Some(executor.take());
         });
         if let Some(local_executor) = local_executor {
             let mut erased_value_executor = Box::new(crate::local::SomeLocalExecutorErasingNotifier::new(local_executor)) as Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>> + '_>;
