@@ -9,8 +9,7 @@ use std::ops::{Sub};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::task::{Context, Poll};
-use crate::context::{TaskLocalImmutableFuture};
+use std::task::{Poll};
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
 use crate::{task_local, DynExecutor, SomeLocalExecutor, Priority, SomeExecutor};
@@ -24,11 +23,32 @@ This is a unique identifier for a task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TaskID(u64);
 
+impl TaskID {
+    /**
+    Creates a task ID from an opaque u64.
+
+    The only valid value comes from a previous call to [TaskID::to_u64].
+    */
+    pub fn from_u64(id: u64) -> Self {
+        TaskID(id)
+    }
+
+    /**
+    Converts the task ID to an opaque u64.
+
+    The only valid use of this value is to pass it to [TaskID::from_u64].
+    */
+    pub fn to_u64(self) -> u64 {
+        self.0
+    }
+}
+
 impl<F: Future, N> From<&Task<F, N>> for TaskID {
     fn from(task: &Task<F, N>) -> Self {
         task.task_id()
     }
 }
+
 
 
 static TASK_IDS: AtomicU64 = AtomicU64::new(0);
@@ -425,7 +445,7 @@ where
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
         //destructure
-        let (future, sender, mut label, priority,
+        let (future, sender, label, priority,
             cancellation, task_id,executor) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.task);
@@ -748,6 +768,10 @@ That eliminates the need for PartialEq, Eq, Hash.  We have ID type for this.
 I suppose we could implement Default with a blank task...
 
  */
+
+/**
+A future that always returns Ready(()).
+*/
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub struct DefaultFuture;
 impl Future for DefaultFuture {
@@ -844,6 +868,38 @@ impl Into<bool> for InFlightTaskCancellation {
         self.0.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
+
+//taskID.  I think we want to support various conversions to and from u64
+
+impl From<u64> for TaskID {
+    /**
+    Equivalent to [TaskID::from_u64].
+    */
+    fn from(id: u64) -> Self {
+        TaskID::from_u64(id)
+    }
+}
+
+impl From<TaskID> for u64 {
+
+    /**
+    Equivalent to [TaskID::to_u64].
+    */
+
+    fn from(id: TaskID) -> u64 {
+        id.to_u64()
+    }
+}
+
+impl AsRef<u64> for TaskID {
+    /**
+    Equivalent to [TaskID::to_u64].
+    */
+    fn as_ref(&self) -> &u64 {
+        &self.0
+    }
+}
+
 
 
 #[cfg(test)]
