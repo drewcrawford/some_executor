@@ -52,7 +52,6 @@ impl<F: Future, N> From<&Task<F, N>> for TaskID {
 }
 
 
-
 static TASK_IDS: AtomicU64 = AtomicU64::new(0);
 
 
@@ -263,7 +262,7 @@ impl<F: Future, N> Task<F, N> {
     - `future`: The future to run.
     - `configuration`: Configuration for the task.
     - `notifier`: An observer to notify when the task completes.  If there is no notifier, consider using [Self::without_notifications] instead.
-*/
+    */
     pub fn with_notifications(label: String, future: F, configuration: Configuration, notifier: Option<N>) -> Self
     where
         F: Future,
@@ -293,7 +292,6 @@ impl<F: Future, N> Task<F, N> {
     pub fn priority(&self) -> priority::Priority {
         self.priority
     }
-
 
 
     pub fn poll_after(&self) -> std::time::Instant {
@@ -372,7 +370,7 @@ impl<F: Future, N> Task<F, N> {
     the output type is erased as well.  Accordingly we do not know what it is.
     */
 
-    pub fn spawn_objsafe<Executor: SomeExecutor>(mut self, executor: &mut Executor ) -> (SpawnedTask<F, N, Executor>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
+    pub fn spawn_objsafe<Executor: SomeExecutor>(mut self, executor: &mut Executor) -> (SpawnedTask<F, N, Executor>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
         let cancellation = InFlightTaskCancellation::default();
         let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified + Send>);
         let boxed_executor = executor.clone_box();
@@ -451,11 +449,12 @@ impl<F: Future> Task<F, Infallible> {
     }
 }
 
-fn common_poll<'l,F,N,L>(future: Pin<&mut F>,sender: &mut ObserverSender<F::Output,N>, label: &mut Option<String>, cancellation:&mut Option<InFlightTaskCancellation>,
-                    executor: &mut Option<Box<dyn SomeExecutor<ExecutorNotifier = Infallible>>>,
-                    local_executor: Option<&mut L>,
-                    priority: Priority, task_id: TaskID, poll_after:Instant, cx: &mut Context) -> std::task::Poll<()>
-where F: Future,
+fn common_poll<'l, F, N, L>(future: Pin<&mut F>, sender: &mut ObserverSender<F::Output, N>, label: &mut Option<String>, cancellation: &mut Option<InFlightTaskCancellation>,
+                            executor: &mut Option<Box<dyn SomeExecutor<ExecutorNotifier=Infallible>>>,
+                            local_executor: Option<&mut L>,
+                            priority: Priority, task_id: TaskID, poll_after: Instant, cx: &mut Context) -> std::task::Poll<()>
+where
+    F: Future,
     N: ObserverNotified<F::Output>,
     L: SomeLocalExecutor<'l>,
 {
@@ -526,19 +525,22 @@ where F: Future,
     }
 }
 
+impl<F: Future, ONotifier, E> SpawnedTask<F, ONotifier, E>
+where ONotifier: ObserverNotified<F::Output> {
+    /**
+    Polls the task.  This has the standard semantics for Rust futures.
 
-impl<F, ONotifier, ENotifier> Future for SpawnedTask<F, ONotifier, ENotifier>
-where
-    F: Future,
-    ONotifier: ObserverNotified<F::Output>,
-{
-    type Output = ();
-
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+    # Parameters
+    - `cx`: The context for the poll.
+    - `local_executor`: A local executor, if available.  This will be used to populate the thread-local [TASK_LOCAL_EXECUTOR] variable.
+    */
+    fn poll<'l, L>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, local_executor: Option<&mut L>) -> std::task::Poll<()> where
+        L: SomeLocalExecutor<'l>
+    {
         //destructure
         let poll_after = self.poll_after();
         let (future, sender, label, priority,
-            cancellation, task_id,executor) = unsafe {
+            cancellation, task_id, executor) = unsafe {
             let unchecked = self.get_unchecked_mut();
             let future = Pin::new_unchecked(&mut unchecked.task);
             let sender = Pin::new_unchecked(&mut unchecked.sender);
@@ -550,497 +552,517 @@ where
             (future, sender, label, priority, cancellation, task_id, executor)
         };
 
-        common_poll::<_,_,Infallible>(future,sender.get_mut(),label.get_mut(),cancellation.get_mut(),executor.get_mut(),None,*priority.get_mut(),task_id,poll_after,cx)
+        common_poll(future, sender.get_mut(), label.get_mut(), cancellation.get_mut(), executor.get_mut(), local_executor, *priority.get_mut(), task_id, poll_after, cx)
     }
 }
 
-impl<'executor, F, ONotifier, Executor: SomeLocalExecutor<'executor>> SpawnedLocalTask<F, ONotifier, Executor>
-where
-    F: Future,
-    ONotifier: ObserverNotified<F::Output>,
-{
-    //I can't believe it's not future
-
-    pub fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &mut Executor) -> std::task::Poll<()> {
-        let poll_after = self.poll_after();
-        //destructure
-        let (future, sender, label, priority,
-            cancellation, task_id) = unsafe {
-            let unchecked = self.get_unchecked_mut();
-            let future = Pin::new_unchecked(&mut unchecked.task);
-            let sender = Pin::new_unchecked(&mut unchecked.sender);
-            let label = Pin::new_unchecked(&mut unchecked.label);
-            let priority = Pin::new_unchecked(&mut unchecked.priority);
-            let cancellation = Pin::new_unchecked(&mut unchecked.cancellation);
-            let task_id = unchecked.task_id;
-            (future, sender, label, priority, cancellation, task_id)
-        };
-
-        common_poll(future,sender.get_mut(),label.get_mut(),cancellation.get_mut(),&mut None,Some(executor),*priority.get_mut(),task_id,poll_after,cx)
+impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
+    where
+        F: Future,
+        ONotifier: ObserverNotified<F::Output>,
+    {
+        type Output = ();
+        /**
+        Implements Future trait by declining to set a local context.
+    */
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            SpawnedTask::poll::<Infallible>(self, cx, None)
+        }
     }
-}
 
-impl Task<Pin<Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>> {
-    pub fn new_objsafe(label: String, future: Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>, configuration: Configuration, notifier: Option<Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Self {
-        Self::with_notifications(label, Box::into_pin(future), configuration, notifier)
+    impl<'executor, F, ONotifier, Executor: SomeLocalExecutor<'executor>> SpawnedLocalTask<F, ONotifier, Executor>
+    where
+        F: Future,
+        ONotifier: ObserverNotified<F::Output>,
+    {
+        //I can't believe it's not future
+
+        /**
+        Polls the task.  This has the standard semantics for Rust futures.
+
+        # Parameters
+        - `cx`: The context for the poll.
+        - `executor`: The executor the task was spawned on.  This will be used to populate the thread-local [TASK_LOCAL_EXECUTOR] variable.
+        - `some_executor`: An executor for spawning new tasks, if desired.  This is used to populate the task-local [TASK_EXECUTOR] variable.
+        */
+        pub fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &mut Executor,
+                    mut some_executor: Option<Box<(dyn SomeExecutor<ExecutorNotifier=Infallible> + 'static)>>) -> std::task::Poll<()> {
+            let poll_after = self.poll_after();
+            //destructure
+            let (future, sender, label, priority,
+                cancellation, task_id) = unsafe {
+                let unchecked = self.get_unchecked_mut();
+                let future = Pin::new_unchecked(&mut unchecked.task);
+                let sender = Pin::new_unchecked(&mut unchecked.sender);
+                let label = Pin::new_unchecked(&mut unchecked.label);
+                let priority = Pin::new_unchecked(&mut unchecked.priority);
+                let cancellation = Pin::new_unchecked(&mut unchecked.cancellation);
+                let task_id = unchecked.task_id;
+                (future, sender, label, priority, cancellation, task_id)
+            };
+
+            common_poll(future, sender.get_mut(), label.get_mut(), cancellation.get_mut(), &mut some_executor, Some(executor), *priority.get_mut(), task_id, poll_after, cx)
+        }
     }
-}
+
+    impl Task<Pin<Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>> {
+        pub fn new_objsafe(label: String, future: Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>, configuration: Configuration, notifier: Option<Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Self {
+            Self::with_notifications(label, Box::into_pin(future), configuration, notifier)
+        }
+    }
 
 
-/**
-Information needed to spawn a task.
-*/
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Configuration {
-    hint: Hint,
-    priority: priority::Priority,
-    poll_after: std::time::Instant,
-}
+    /**
+    Information needed to spawn a task.
+    */
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    pub struct Configuration {
+        hint: Hint,
+        priority: priority::Priority,
+        poll_after: std::time::Instant,
+    }
 
-/**
-A builder for [Configuration].
-*/
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct ConfigurationBuilder {
-    hint: Option<Hint>,
-    priority: Option<Priority>,
-    poll_after: Option<std::time::Instant>,
-}
+    /**
+    A builder for [Configuration].
+    */
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    pub struct ConfigurationBuilder {
+        hint: Option<Hint>,
+        priority: Option<Priority>,
+        poll_after: Option<std::time::Instant>,
+    }
 
-impl ConfigurationBuilder {
-    pub fn new() -> Self {
-        ConfigurationBuilder {
-            hint: None,
-            priority: None,
-            poll_after: None,
+    impl ConfigurationBuilder {
+        pub fn new() -> Self {
+            ConfigurationBuilder {
+                hint: None,
+                priority: None,
+                poll_after: None,
+            }
+        }
+
+        /**
+        Provide a hint about the runtime characteristics of the future.
+        */
+
+        pub fn hint(mut self, hint: Hint) -> Self {
+            self.hint = Some(hint);
+            self
+        }
+
+        /**
+        Provide a priority for the future.
+
+        See the [Priority] type for details.
+        */
+        pub fn priority(mut self, priority: priority::Priority) -> Self {
+            self.priority = Some(priority);
+            self
+        }
+
+        /**
+        Provide a time after which the future should be polled.
+        */
+        pub fn poll_after(mut self, poll_after: std::time::Instant) -> Self {
+            self.poll_after = Some(poll_after);
+            self
+        }
+
+        pub fn build(self) -> Configuration {
+            Configuration {
+                hint: self.hint.unwrap_or_else(|| Hint::default()),
+                priority: self.priority.unwrap_or_else(|| priority::Priority::Unknown),
+                poll_after: self.poll_after.unwrap_or_else(|| std::time::Instant::now().sub(std::time::Duration::from_secs(1))),
+            }
+        }
+    }
+
+    impl Configuration {
+        pub fn new(hint: Hint, priority: priority::Priority, poll_after: std::time::Instant) -> Self {
+            Configuration {
+                hint,
+                priority,
+                poll_after,
+            }
         }
     }
 
     /**
-    Provide a hint about the runtime characteristics of the future.
+    ObjSafe type-erased wrapper for [SpawnedLocalTask].
     */
+    pub trait DynLocalSpawnedTask<Executor> {
+        fn poll<'executor>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'executor mut Executor, some_executor: Option<Box<(dyn SomeExecutor<ExecutorNotifier=Infallible> + 'static)>>) -> std::task::Poll<()>;
+        fn poll_after(&self) -> std::time::Instant;
+        fn label(&self) -> &str;
 
-    pub fn hint(mut self, hint: Hint) -> Self {
-        self.hint = Some(hint);
-        self
+        fn task_id(&self) -> TaskID;
+
+        fn hint(&self) -> Hint;
+        fn priority(&self) -> priority::Priority;
     }
 
-    /**
-    Provide a priority for the future.
+    impl<'executor, F, ONotifier, Executor> DynLocalSpawnedTask<Executor> for SpawnedLocalTask<F, ONotifier, Executor>
+    where
+        F: Future,
+        Executor: SomeLocalExecutor<'executor>,
+        ONotifier: ObserverNotified<F::Output>,
+    {
+        fn poll<'ex>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'ex mut Executor, some_executor: Option<Box<(dyn SomeExecutor<ExecutorNotifier=Infallible> + 'static)>>) -> std::task::Poll<()> {
+            SpawnedLocalTask::poll(self, cx, executor, some_executor)
+        }
 
-    See the [Priority] type for details.
-    */
-    pub fn priority(mut self, priority: priority::Priority) -> Self {
-        self.priority = Some(priority);
-        self
-    }
+        fn poll_after(&self) -> std::time::Instant {
+            self.poll_after
+        }
+        fn label(&self) -> &str {
+            self.label()
+        }
 
-    /**
-    Provide a time after which the future should be polled.
-    */
-    pub fn poll_after(mut self, poll_after: std::time::Instant) -> Self {
-        self.poll_after = Some(poll_after);
-        self
-    }
+        fn hint(&self) -> Hint {
+            self.hint
+        }
+        fn priority(&self) -> priority::Priority {
+            self.priority()
+        }
 
-    pub fn build(self) -> Configuration {
-        Configuration {
-            hint: self.hint.unwrap_or_else(|| Hint::default()),
-            priority: self.priority.unwrap_or_else(|| priority::Priority::Unknown),
-            poll_after: self.poll_after.unwrap_or_else(|| std::time::Instant::now().sub(std::time::Duration::from_secs(1))),
+        fn task_id(&self) -> TaskID {
+            self.task_id()
         }
     }
-}
 
-impl Configuration {
-    pub fn new(hint: Hint, priority: priority::Priority, poll_after: std::time::Instant) -> Self {
-        Configuration {
-            hint,
-            priority,
-            poll_after,
+    /**
+    ObjSafe type-erased wrapper for [SpawnedTask].
+    */
+    pub trait DynSpawnedTask<Executor> {
+        fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()>;
+        fn poll_after(&self) -> std::time::Instant;
+        fn label(&self) -> &str;
+
+        fn task_id(&self) -> TaskID;
+
+        fn hint(&self) -> Hint;
+        fn priority(&self) -> priority::Priority;
+    }
+
+    impl<F: Future, N: ObserverNotified<<F as Future>::Output>, E> DynSpawnedTask<E> for SpawnedTask<F, N, E> {
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+            Future::poll(self, cx)
+        }
+
+        fn poll_after(&self) -> Instant {
+            self.poll_after()
+        }
+
+        fn label(&self) -> &str {
+            self.label()
+        }
+
+        fn task_id(&self) -> TaskID {
+            self.task_id()
+        }
+
+        fn hint(&self) -> Hint {
+            self.hint()
+        }
+
+        fn priority(&self) -> priority::Priority {
+            self.priority()
         }
     }
-}
 
-/**
-ObjSafe type-erased wrapper for [SpawnedLocalTask].
-*/
-pub trait DynLocalSpawnedTask<Executor> {
-    fn poll<'executor>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'executor mut Executor) -> std::task::Poll<()>;
-    fn poll_after(&self) -> std::time::Instant;
-    fn label(&self) -> &str;
+    /* boilerplates
 
-    fn task_id(&self) -> TaskID;
+    configuration - default
 
-    fn hint(&self) -> Hint;
-    fn priority(&self) -> priority::Priority;
-}
-
-impl<'executor, F, ONotifier, Executor> DynLocalSpawnedTask<Executor> for SpawnedLocalTask<F, ONotifier, Executor>
-where
-    F: Future,
-    Executor: SomeLocalExecutor<'executor>,
-    ONotifier: ObserverNotified<F::Output>,
-{
-    fn poll<'ex>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'ex mut Executor) -> std::task::Poll<()> {
-        SpawnedLocalTask::poll(self, cx, executor)
-    }
-
-    fn poll_after(&self) -> std::time::Instant {
-        self.poll_after
-    }
-    fn label(&self) -> &str {
-        self.label()
-    }
-
-    fn hint(&self) -> Hint {
-        self.hint
-    }
-    fn priority(&self) -> priority::Priority {
-        self.priority()
-    }
-
-    fn task_id(&self) -> TaskID {
-        self.task_id()
-    }
-}
-
-/**
-ObjSafe type-erased wrapper for [SpawnedTask].
-*/
-pub trait DynSpawnedTask<Executor> {
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()>;
-    fn poll_after(&self) -> std::time::Instant;
-    fn label(&self) -> &str;
-
-    fn task_id(&self) -> TaskID;
-
-    fn hint(&self) -> Hint;
-    fn priority(&self) -> priority::Priority;
-}
-
-impl<F: Future,N: ObserverNotified<<F as Future>::Output>,E> DynSpawnedTask<E> for SpawnedTask<F,N,E> {
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        Future::poll(self, cx)
-    }
-
-    fn poll_after(&self) -> Instant {
-        self.poll_after()
-    }
-
-    fn label(&self) -> &str {
-        self.label()
-    }
-
-    fn task_id(&self) -> TaskID {
-        self.task_id()
-    }
-
-    fn hint(&self) -> Hint {
-        self.hint()
-    }
-
-    fn priority(&self) -> priority::Priority {
-        self.priority()
-    }
-}
-
-
-/* boilerplates
-
-configuration - default
-
-*/
-impl Default for Configuration {
-    fn default() -> Self {
-        Configuration {
-            hint: Hint::default(),
-            priority: priority::Priority::Unknown,
-            poll_after: std::time::Instant::now().sub(std::time::Duration::from_secs(1)),
+    */
+    impl Default for Configuration {
+        fn default() -> Self {
+            Configuration {
+                hint: Hint::default(),
+                priority: priority::Priority::Unknown,
+                poll_after: std::time::Instant::now().sub(std::time::Duration::from_secs(1)),
+            }
         }
     }
-}
 
-/*
-I don't think it makes sense to support Clone on Task.
-That eliminates the need for PartialEq, Eq, Hash.  We have ID type for this.
+    /*
+    I don't think it makes sense to support Clone on Task.
+    That eliminates the need for PartialEq, Eq, Hash.  We have ID type for this.
 
-I suppose we could implement Default with a blank task...
+    I suppose we could implement Default with a blank task...
 
- */
-
-/**
-A future that always returns Ready(()).
-*/
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
-pub struct DefaultFuture;
-impl Future for DefaultFuture {
-    type Output = ();
-    fn poll(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        Poll::Ready(())
-    }
-}
-impl Default for Task<DefaultFuture, Infallible> {
-    fn default() -> Self {
-        Task::with_notifications("".to_string(), DefaultFuture, Configuration::default(), None)
-    }
-}
-
-/*
-Support from for the Future type
- */
-
-impl<F: Future, N> From<F> for Task<F, N> {
-    fn from(future: F) -> Self {
-        Task::with_notifications("".to_string(), future, Configuration::default(), None)
-    }
-}
-
-/*
-Support AsRef for the underlying future type
- */
-
-impl<F: Future, N> AsRef<F> for Task<F, N> {
-    fn as_ref(&self) -> &F {
-        &self.future
-    }
-}
-
-/*
-Support AsMut for the underlying future type
- */
-impl<F: Future, N> AsMut<F> for Task<F, N> {
-    fn as_mut(&mut self) -> &mut F {
-        &mut self.future
-    }
-}
-
-/*
-Analogously, for spawned task...
- */
-
-
-impl<F: Future,N,E> AsRef<F> for SpawnedTask<F, N, E> {
-    fn as_ref(&self) -> &F {
-        &self.task
-    }
-}
-
-impl<F: Future,N,E> AsMut<F> for SpawnedTask<F, N, E> {
-    fn as_mut(&mut self) -> &mut F {
-        &mut self.task
-    }
-}
-
-impl<F: Future,N,E> AsRef<F> for SpawnedLocalTask<F, N, E> {
-    fn as_ref(&self) -> &F {
-        &self.task
-    }
-}
-
-impl<F: Future,N,E> AsMut<F> for SpawnedLocalTask<F, N, E> {
-    fn as_mut(&mut self) -> &mut F {
-        &mut self.task
-    }
-}
-
-/*
-InFlightTaskCancellation
-- don't want to publish clone right now.  Eliminates Copy,Eq,Hash, etc.
-
-Default is possible I suppose
- */
-
-impl Default for InFlightTaskCancellation {
-    fn default() -> Self {
-        InFlightTaskCancellation(Arc::new(AtomicBool::new(false)))
-    }
-}
-
-impl From<bool> for InFlightTaskCancellation {
-    fn from(value: bool) -> Self {
-        InFlightTaskCancellation(Arc::new(AtomicBool::new(value)))
-    }
-}
-
-impl Into<bool> for InFlightTaskCancellation {
-    fn into(self) -> bool {
-        self.0.load(std::sync::atomic::Ordering::Relaxed)
-    }
-}
-
-//taskID.  I think we want to support various conversions to and from u64
-
-impl From<u64> for TaskID {
-    /**
-    Equivalent to [TaskID::from_u64].
-    */
-    fn from(id: u64) -> Self {
-        TaskID::from_u64(id)
-    }
-}
-
-impl From<TaskID> for u64 {
+     */
 
     /**
-    Equivalent to [TaskID::to_u64].
+    A future that always returns Ready(()).
     */
-
-    fn from(id: TaskID) -> u64 {
-        id.to_u64()
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
+    pub struct DefaultFuture;
+    impl Future for DefaultFuture {
+        type Output = ();
+        fn poll(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+            Poll::Ready(())
+        }
     }
-}
-
-impl AsRef<u64> for TaskID {
-    /**
-    Equivalent to [TaskID::to_u64].
-    */
-    fn as_ref(&self) -> &u64 {
-        &self.0
-    }
-}
-
-
-
-#[cfg(test)]
-mod tests {
-    use std::any::Any;
-    use std::convert::Infallible;
-    use std::future::Future;
-    use std::pin::Pin;
-    use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
-    use crate::task::{DynLocalSpawnedTask, SpawnedTask, Task};
-    use crate::{task_local, SomeExecutor, SomeLocalExecutor};
-
-    #[test] fn test_create_task() {
-        let task: Task<_,Infallible> = Task::with_notifications("test".to_string(), async {}, Default::default(), None);
-        assert_eq!(task.label(), "test");
+    impl Default for Task<DefaultFuture, Infallible> {
+        fn default() -> Self {
+            Task::with_notifications("".to_string(), DefaultFuture, Configuration::default(), None)
+        }
     }
 
-    #[test] fn test_create_no_notify() {
-        let t = Task::without_notifications("test".to_string(), async {}, Default::default());
-        assert_eq!(t.label(), "test");
+    /*
+    Support from for the Future type
+     */
+
+    impl<F: Future, N> From<F> for Task<F, N> {
+        fn from(future: F) -> Self {
+            Task::with_notifications("".to_string(), future, Configuration::default(), None)
+        }
     }
-    #[test]
-    fn test_send() {
-        task_local!(
+
+    /*
+    Support AsRef for the underlying future type
+     */
+
+    impl<F: Future, N> AsRef<F> for Task<F, N> {
+        fn as_ref(&self) -> &F {
+            &self.future
+        }
+    }
+
+    /*
+    Support AsMut for the underlying future type
+     */
+    impl<F: Future, N> AsMut<F> for Task<F, N> {
+        fn as_mut(&mut self) -> &mut F {
+            &mut self.future
+        }
+    }
+
+    /*
+    Analogously, for spawned task...
+     */
+
+    impl<F: Future, N, E> AsRef<F> for SpawnedTask<F, N, E> {
+        fn as_ref(&self) -> &F {
+            &self.task
+        }
+    }
+
+    impl<F: Future, N, E> AsMut<F> for SpawnedTask<F, N, E> {
+        fn as_mut(&mut self) -> &mut F {
+            &mut self.task
+        }
+    }
+
+    impl<F: Future, N, E> AsRef<F> for SpawnedLocalTask<F, N, E> {
+        fn as_ref(&self) -> &F {
+            &self.task
+        }
+    }
+
+    impl<F: Future, N, E> AsMut<F> for SpawnedLocalTask<F, N, E> {
+        fn as_mut(&mut self) -> &mut F {
+            &mut self.task
+        }
+    }
+
+    /*
+    InFlightTaskCancellation
+    - don't want to publish clone right now.  Eliminates Copy,Eq,Hash, etc.
+
+    Default is possible I suppose
+     */
+
+    impl Default for InFlightTaskCancellation {
+        fn default() -> Self {
+            InFlightTaskCancellation(Arc::new(AtomicBool::new(false)))
+        }
+    }
+
+    impl From<bool> for InFlightTaskCancellation {
+        fn from(value: bool) -> Self {
+            InFlightTaskCancellation(Arc::new(AtomicBool::new(value)))
+        }
+    }
+
+    impl Into<bool> for InFlightTaskCancellation {
+        fn into(self) -> bool {
+            self.0.load(std::sync::atomic::Ordering::Relaxed)
+        }
+    }
+
+    //taskID.  I think we want to support various conversions to and from u64
+
+    impl From<u64> for TaskID {
+        /**
+        Equivalent to [TaskID::from_u64].
+        */
+        fn from(id: u64) -> Self {
+            TaskID::from_u64(id)
+        }
+    }
+
+    impl From<TaskID> for u64 {
+        /**
+        Equivalent to [TaskID::to_u64].
+        */
+
+        fn from(id: TaskID) -> u64 {
+            id.to_u64()
+        }
+    }
+
+    impl AsRef<u64> for TaskID {
+        /**
+        Equivalent to [TaskID::to_u64].
+        */
+        fn as_ref(&self) -> &u64 {
+            &self.0
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::any::Any;
+        use std::convert::Infallible;
+        use std::future::Future;
+        use std::pin::Pin;
+        use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
+        use crate::task::{DynLocalSpawnedTask, SpawnedTask, Task};
+        use crate::{task_local, SomeExecutor, SomeLocalExecutor};
+
+        #[test]
+        fn test_create_task() {
+            let task: Task<_, Infallible> = Task::with_notifications("test".to_string(), async {}, Default::default(), None);
+            assert_eq!(task.label(), "test");
+        }
+
+        #[test]
+        fn test_create_no_notify() {
+            let t = Task::without_notifications("test".to_string(), async {}, Default::default());
+            assert_eq!(t.label(), "test");
+        }
+        #[test]
+        fn test_send() {
+            task_local!(
             static FOO: u32;
         );
 
-        let scoped = FOO.scope(42, async {});
+            let scoped = FOO.scope(42, async {});
 
-        fn assert_send<T: Send>(_: T) {}
-        assert_send(scoped);
-    }
-
-    #[test]
-    fn test_send_task() {
-        #[allow(unused)]
-        fn task_check<F: Future + Send, N: Send>(task: Task<F, N>) {
             fn assert_send<T: Send>(_: T) {}
-            assert_send(task);
-        }
-        #[allow(unused)]
-        fn task_check_sync<F: Future + Sync, N: Sync>(task: Task<F, N>) {
-            fn assert_sync<T: Sync>(_: T) {}
-            assert_sync(task);
-        }
-        #[allow(unused)]
-        fn task_check_unpin<F: Future + Unpin, N: Unpin>(task: Task<F, N>) {
-            fn assert_unpin<T: Unpin>(_: T) {}
-            assert_unpin(task);
+            assert_send(scoped);
         }
 
-        #[allow(unused)]
-        fn spawn_check<F: Future + Send, E: SomeExecutor>(task: Task<F, Infallible>, exec: &mut E)
-        where
-            F::Output: Send,
-            E: Send,
-        {
-            let spawned: SpawnedTask<F, Infallible, E> = task.spawn(exec).0;
-            fn assert_send<T: Send>(_: T) {}
-            assert_send(spawned);
-        }
-
-        #[allow(unused)]
-        fn spawn_check_sync<F: Future + Sync, E: SomeExecutor>(task: Task<F, Infallible>, exec: &mut E)
-        where
-            F::Output: Send,
-            E::ExecutorNotifier: Sync,
-        {
-            let spawned: SpawnedTask<F, Infallible, E> = task.spawn(exec).0;
-            fn assert_sync<T: Sync>(_: T) {}
-            assert_sync(spawned);
-        }
-
-        #[allow(unused)]
-        fn spawn_check_unpin<F: Future + Unpin, E: SomeExecutor>(task: Task<F, Infallible>, exec: &mut E)
-        where
-            E: Unpin,
-        {
-            let spawned: SpawnedTask<F, Infallible, E> = task.spawn(exec).0;
-            fn assert_unpin<T: Unpin>(_: T) {}
-            assert_unpin(spawned);
-        }
-    }
-
-
-
-    #[test]
-    fn test_local_executor() {
-
-        struct ExLocalExecutor<'future>(Vec<Pin<Box<dyn DynLocalSpawnedTask<ExLocalExecutor<'future>> + 'future>>>);
-
-        impl<'existing_tasks,'new_task> SomeLocalExecutor<'new_task> for ExLocalExecutor<'existing_tasks> where 'new_task: 'existing_tasks {
-            type ExecutorNotifier = Infallible;
-
-            fn spawn_local<'a, F: Future, Notifier: ObserverNotified<F::Output>>(&'a mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
-            where
-                Self: Sized,
-                F: 'new_task,
-            /* I am a little uncertain whether this is really required */
-                <F as Future>::Output: Unpin
-            {
-                let (spawn,observer)  = task.spawn_local(self);
-                let pinned_spawn = Box::pin(spawn);
-                self.0.push(pinned_spawn);
-                observer
+        #[test]
+        fn test_send_task() {
+            #[allow(unused)]
+            fn task_check<F: Future + Send, N: Send>(task: Task<F, N>) {
+                fn assert_send<T: Send>(_: T) {}
+                assert_send(task);
+            }
+            #[allow(unused)]
+            fn task_check_sync<F: Future + Sync, N: Sync>(task: Task<F, N>) {
+                fn assert_sync<T: Sync>(_: T) {}
+                assert_sync(task);
+            }
+            #[allow(unused)]
+            fn task_check_unpin<F: Future + Unpin, N: Unpin>(task: Task<F, N>) {
+                fn assert_unpin<T: Unpin>(_: T) {}
+                assert_unpin(task);
             }
 
-            fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
+            #[allow(unused)]
+            fn spawn_check<F: Future + Send, E: SomeExecutor>(task: Task<F, Infallible>, exec: &mut E)
             where
-                Self: Sized,
-                F: 'new_task,
+                F::Output: Send,
+                E: Send,
             {
-                async {
-                    let (spawn,observer)  = task.spawn_local(self);
+                let spawned: SpawnedTask<F, Infallible, E> = task.spawn(exec).0;
+                fn assert_send<T: Send>(_: T) {}
+                assert_send(spawned);
+            }
+
+            #[allow(unused)]
+            fn spawn_check_sync<F: Future + Sync, E: SomeExecutor>(task: Task<F, Infallible>, exec: &mut E)
+            where
+                F::Output: Send,
+                E::ExecutorNotifier: Sync,
+            {
+                let spawned: SpawnedTask<F, Infallible, E> = task.spawn(exec).0;
+                fn assert_sync<T: Sync>(_: T) {}
+                assert_sync(spawned);
+            }
+
+            #[allow(unused)]
+            fn spawn_check_unpin<F: Future + Unpin, E: SomeExecutor>(task: Task<F, Infallible>, exec: &mut E)
+            where
+                E: Unpin,
+            {
+                let spawned: SpawnedTask<F, Infallible, E> = task.spawn(exec).0;
+                fn assert_unpin<T: Unpin>(_: T) {}
+                assert_unpin(spawned);
+            }
+        }
+
+
+        #[test]
+        fn test_local_executor() {
+            struct ExLocalExecutor<'future>(Vec<Pin<Box<dyn DynLocalSpawnedTask<ExLocalExecutor<'future>> + 'future>>>);
+
+            impl<'existing_tasks, 'new_task> SomeLocalExecutor<'new_task> for ExLocalExecutor<'existing_tasks>
+            where
+                'new_task: 'existing_tasks,
+            {
+                type ExecutorNotifier = Infallible;
+
+                fn spawn_local<'a, F: Future, Notifier: ObserverNotified<F::Output>>(&'a mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
+                where
+                    Self: Sized,
+                    F: 'new_task,
+                /* I am a little uncertain whether this is really required */
+                    <F as Future>::Output: Unpin,
+                {
+                    let (spawn, observer) = task.spawn_local(self);
                     let pinned_spawn = Box::pin(spawn);
                     self.0.push(pinned_spawn);
                     observer
                 }
-            }
 
-            fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
-                let (spawn, observer) = task.spawn_local_objsafe(self);
-                let pinned_spawn = Box::pin(spawn);
-                self.0.push(pinned_spawn);
-                observer
-            }
+                fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
+                where
+                    Self: Sized,
+                    F: 'new_task,
+                {
+                    async {
+                        let (spawn, observer) = task.spawn_local(self);
+                        let pinned_spawn = Box::pin(spawn);
+                        self.0.push(pinned_spawn);
+                        observer
+                    }
+                }
 
-            fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 's> {
-                Box::new(async {
+                fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
                     let (spawn, observer) = task.spawn_local_objsafe(self);
                     let pinned_spawn = Box::pin(spawn);
                     self.0.push(pinned_spawn);
                     observer
-                })
-            }
+                }
+
+                fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 's> {
+                    Box::new(async {
+                        let (spawn, observer) = task.spawn_local_objsafe(self);
+                        let pinned_spawn = Box::pin(spawn);
+                        self.0.push(pinned_spawn);
+                        observer
+                    })
+                }
 
 
-
-            fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
-                todo!()
+                fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
+                    todo!()
+                }
             }
         }
     }
-}
