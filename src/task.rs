@@ -313,7 +313,7 @@ impl<F: Future, N> Task<F, N> {
     When using this method, the TASK_LOCAL_EXECUTOR will be set to None.
     To spawn a task onto a local executor instead, use [Task::spawn_local].
     */
-    pub fn spawn<Executor: SomeExecutor>(mut self, executor: &mut Executor) -> (SpawnedTask<F, N, Executor::ExecutorNotifier>, Observer<F::Output, Executor::ExecutorNotifier>) {
+    pub fn spawn<Executor: SomeExecutor>(mut self, executor: &mut Executor) -> (SpawnedTask<F, N, Executor>, Observer<F::Output, Executor::ExecutorNotifier>) {
         let cancellation = InFlightTaskCancellation::default();
         let some_notifier: Option<Executor::ExecutorNotifier> = executor.executor_notifier();
         let task_id = self.task_id();
@@ -354,8 +354,24 @@ impl<F: Future, N> Task<F, N> {
         };
         (spawned_task, receiver)
     }
+    /**
+    Spawns the task onto a local executor.
 
-    pub fn spawn_objsafe(mut self, executor: &mut (dyn SomeExecutor<ExecutorNotifier=NoNotified> + 'static)) -> (SpawnedTask<F, N, Box<dyn ExecutorNotified + Send>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
+    # Objsafe
+
+    A word on exactly what 'objsafe' means in this context.  Objsafe means that whoever is spawning the task,
+    doesn't know which executor they are using, so they spawn onto an objsafe executor via the objsafe methods.
+
+    This has two implications.  First, we need to hide the executor type from the spawner.  However, we don't need
+    to hide it from the *executor*, since the executor knows what it is.  Accordingly, this information is erased
+    with respect to types sent to the spawner, and not erased with respect to types sent
+    to the executor.
+
+    Second, the objsafe spawn method cannot have any generics.  Therefore, the future type is erased (boxed) and worse,
+    the output type is erased as well.  Accordingly we do not know what it is.
+    */
+
+    pub fn spawn_objsafe(mut self, executor: &mut (dyn SomeExecutor<ExecutorNotifier=NoNotified> + 'static)) -> (SpawnedTask<F, N, Box<dyn SomeExecutor<ExecutorNotifier=NoNotified> + Send>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
         let cancellation = InFlightTaskCancellation::default();
         let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified + Send>);
         let boxed_executor = executor.clone_box();
@@ -954,9 +970,9 @@ mod tests {
         fn spawn_check<F: Future + Send, E: SomeExecutor>(task: Task<F, NoNotified>, exec: &mut E)
         where
             F::Output: Send,
-            E::ExecutorNotifier: Send,
+            E: Send,
         {
-            let spawned: SpawnedTask<F, NoNotified, E::ExecutorNotifier> = task.spawn(exec).0;
+            let spawned: SpawnedTask<F, NoNotified, E> = task.spawn(exec).0;
             fn assert_send<T: Send>(_: T) {}
             assert_send(spawned);
         }
@@ -967,7 +983,7 @@ mod tests {
             F::Output: Send,
             E::ExecutorNotifier: Sync,
         {
-            let spawned: SpawnedTask<F, NoNotified, E::ExecutorNotifier> = task.spawn(exec).0;
+            let spawned: SpawnedTask<F, NoNotified, E> = task.spawn(exec).0;
             fn assert_sync<T: Sync>(_: T) {}
             assert_sync(spawned);
         }
@@ -975,9 +991,9 @@ mod tests {
         #[allow(unused)]
         fn spawn_check_unpin<F: Future + Unpin, E: SomeExecutor>(task: Task<F, NoNotified>, exec: &mut E)
         where
-            E::ExecutorNotifier: Unpin,
+            E: Unpin,
         {
-            let spawned: SpawnedTask<F, NoNotified, E::ExecutorNotifier> = task.spawn(exec).0;
+            let spawned: SpawnedTask<F, NoNotified, E> = task.spawn(exec).0;
             fn assert_unpin<T: Unpin>(_: T) {}
             assert_unpin(spawned);
         }
