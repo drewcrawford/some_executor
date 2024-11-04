@@ -214,6 +214,16 @@ A non-objsafe descendant of [SomeLocalExecutor].
 
 This trait provides a more ergonomic interface, but is not object-safe.
 
+# Note
+
+We don't support clone on LocalExecutor.  There are a few reasons:
+1.  The typical case of thread-local executor may operate primarily on the principle of (mutable) references into stack memory.
+    Accordingly, a clone may involve some kind of stack-heap transfer (can't really do that since Futures are pinned), or effectively
+    requiring heap allocations from the start.  This is to be avoided.
+2.  Similarly, the mentioned mutable references make it impossible to have two mutable references to the same executor.
+3.  The SomeExecutor abstraction works more like a channel, where senders can be cloned.  In practice, local executors want to implement
+    that – if at all – by bolting such a channel onto their executor with some kind of adapter tool.  This allows the overhead to be
+    avoided in cases it isn't used.
 */
 pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor<'tasks> {}
 

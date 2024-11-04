@@ -10,7 +10,8 @@ use std::ops::{Sub};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::task::{Poll};
+use std::task::{Context, Poll};
+use std::time::Instant;
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, Observer, ObserverNotified, ObserverSender};
 use crate::{task_local, DynExecutor, SomeLocalExecutor, Priority, SomeExecutor};
@@ -124,14 +125,13 @@ where
     sender: ObserverSender<F::Output, ONotifier>,
     poll_after: std::time::Instant,
     executor: PhantomData<Executor>,
-    hint: Hint,
-    priority: Priority,
-    task_id: TaskID,
     //these task-local properties are optional so we can move them in and out
     label: Option<String>,
     cancellation: Option<InFlightTaskCancellation>,
-
     //copy-safe task-local properties
+    hint: Hint,
+    priority: Priority,
+    task_id: TaskID,
 }
 
 
@@ -761,6 +761,45 @@ where
     }
 }
 
+/**
+ObjSafe type-erased wrapper for [SpawnedTask].
+*/
+pub trait DynSpawnedTask<Executor> {
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()>;
+    fn poll_after(&self) -> std::time::Instant;
+    fn label(&self) -> &str;
+
+    fn task_id(&self) -> TaskID;
+
+    fn hint(&self) -> Hint;
+    fn priority(&self) -> priority::Priority;
+}
+
+impl<F: Future,N: ObserverNotified<<F as Future>::Output>,E> DynSpawnedTask<E> for SpawnedTask<F,N,E> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        Future::poll(self, cx)
+    }
+
+    fn poll_after(&self) -> Instant {
+        self.poll_after()
+    }
+
+    fn label(&self) -> &str {
+        self.label()
+    }
+
+    fn task_id(&self) -> TaskID {
+        self.task_id()
+    }
+
+    fn hint(&self) -> Hint {
+        self.hint()
+    }
+
+    fn priority(&self) -> priority::Priority {
+        self.priority()
+    }
+}
 
 
 /* boilerplates
