@@ -371,7 +371,7 @@ impl<F: Future, N> Task<F, N> {
     the output type is erased as well.  Accordingly we do not know what it is.
     */
 
-    pub fn spawn_objsafe(mut self, executor: &mut (dyn SomeExecutor<ExecutorNotifier=NoNotified> + 'static)) -> (SpawnedTask<F, N, Box<dyn SomeExecutor<ExecutorNotifier=NoNotified> + Send>>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
+    pub fn spawn_objsafe<Executor: SomeExecutor>(mut self, executor: &mut Executor ) -> (SpawnedTask<F, N, Executor>, Observer<F::Output, Box<dyn ExecutorNotified + Send>>) {
         let cancellation = InFlightTaskCancellation::default();
         let boxed_executor_notifier = executor.executor_notifier().map(|n| Box::new(n) as Box<dyn ExecutorNotified + Send>);
         let boxed_executor = executor.clone_box();
