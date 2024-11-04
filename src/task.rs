@@ -735,7 +735,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
 
     If you have no relevant parameter for [LocalExecutorType], choose [Infallible].
     */
-    pub trait DynSpawnedTask<LocalExecutorType> {
+    pub trait DynSpawnedTask<LocalExecutorType>: Send {
         fn poll<'l>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, local_executor: Option<&mut LocalExecutorType>) -> std::task::Poll<()>
         where LocalExecutorType: SomeLocalExecutor<'l>;
 
@@ -748,7 +748,8 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
         fn priority(&self) -> priority::Priority;
     }
 
-    impl<F: Future, N: ObserverNotified<<F as Future>::Output>, E,L> DynSpawnedTask<L> for SpawnedTask<F, N, E> {
+    impl<F: Future, N: ObserverNotified<<F as Future>::Output>, E,L> DynSpawnedTask<L> for SpawnedTask<F, N, E>
+    where F: Send, E: Send, N: Send, F::Output: Send{
         fn poll<'l>(self: Pin<&mut Self>, cx: &mut Context<'_>, local_executor: Option<&mut L>) -> Poll<()>
         where
             L: SomeLocalExecutor<'l>,
