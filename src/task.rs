@@ -456,7 +456,7 @@ fn common_poll<'l, F, N, L>(future: Pin<&mut F>, sender: &mut ObserverSender<F::
 where
     F: Future,
     N: ObserverNotified<F::Output>,
-    L: SomeLocalExecutor<'l>,
+    L: SomeLocalExecutor<'l> ,
 {
     assert!(poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
     if sender.observer_cancelled() {
@@ -734,7 +734,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
     ObjSafe type-erased wrapper for [SpawnedTask].
     */
     pub trait DynSpawnedTask<Executor> {
-        fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()>;
+        fn poll<'l, L: SomeLocalExecutor<'l>>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, local_executor: Option<&mut L>) -> std::task::Poll<()>;
         fn poll_after(&self) -> std::time::Instant;
         fn label(&self) -> &str;
 
@@ -745,8 +745,8 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
     }
 
     impl<F: Future, N: ObserverNotified<<F as Future>::Output>, E> DynSpawnedTask<E> for SpawnedTask<F, N, E> {
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-            Future::poll(self, cx)
+        fn poll<'l,L: SomeLocalExecutor<'l>>(self: Pin<&mut Self>, cx: &mut Context<'_>, local_executor: Option<&mut L>) -> Poll<()> {
+            SpawnedTask::poll(self, cx, local_executor)
         }
 
         fn poll_after(&self) -> Instant {

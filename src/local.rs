@@ -11,7 +11,7 @@ pub(crate) struct SomeLocalExecutorErasingNotifier<'borrow, 'underlying, Underly
     _phantom: PhantomData<&'underlying ()>
 }
 
-impl <'borrow, 'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalExecutorErasingNotifier<'borrow, 'underlying, UnderlyingExecutor> {
+impl <'borrow, 'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying> + ?Sized> SomeLocalExecutorErasingNotifier<'borrow, 'underlying, UnderlyingExecutor> {
     pub(crate) fn new(executor: &'borrow mut UnderlyingExecutor) -> Self {
         Self {
             executor,
