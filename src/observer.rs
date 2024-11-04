@@ -229,6 +229,15 @@ impl ObserverNotified<Box<(dyn std::any::Any + 'static)>> for Box<dyn ObserverNo
     }
 }
 
+//I guess a few ways?
+
+impl ObserverNotified<Box<(dyn Any + Send + 'static)>> for Box<dyn ObserverNotified<(dyn Any + Send + 'static)> + Send> {
+    fn notify(&mut self, value: &Box<(dyn Any + Send + 'static)>) {
+        let r = Box::as_mut(self);
+        r.notify(value);
+    }
+}
+
 impl<'executor> ExecutorNotified for Infallible {
     fn request_cancel(&mut self) {
         panic!("NoNotified should not be used");
