@@ -562,7 +562,7 @@ where
     //I can't believe it's not future
 
     pub fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &mut Executor) -> std::task::Poll<()> {
-        assert!(self.poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
+        let poll_after = self.poll_after();
         //destructure
         let (future, sender, label, priority,
             cancellation, task_id) = unsafe {
@@ -575,76 +575,8 @@ where
             let task_id = unchecked.task_id;
             (future, sender, label, priority, cancellation, task_id)
         };
-        //set local executor
-        let mut erased_value_executor = Box::new(crate::local::SomeLocalExecutorErasingNotifier::new(executor)) as Box<dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>> + '_>;
-        let erased_value_executor_ref = Box::as_mut(&mut erased_value_executor);
 
-        //set task local properties
-        let label = label.get_mut();
-        let cancellation = cancellation.get_mut();
-        unsafe {
-            TASK_LABEL.with_mut(|l| {
-                *l = Some(label.take().expect("Label not set (is task being polled already?)"));
-            });
-            TASK_PRIORITY.with_mut(|p| {
-                *p = Some(*priority.get_mut());
-            });
-            IS_CANCELLED.with_mut(|c| {
-                *c = Some(cancellation.take().expect("Cancellation not set (is task being polled already?)"));
-            });
-            TASK_ID.with_mut(|i| {
-                *i = Some(task_id);
-            });
-            TASK_EXECUTOR.with_mut(|e| {
-                *e = None;
-            });
-
-            let erased_unsafe_executor = UnsafeErasedLocalExecutor::new(erased_value_executor_ref);
-            TASK_LOCAL_EXECUTOR.with(|e| {
-                e.borrow_mut().replace(Box::new(erased_unsafe_executor));
-            });
-        }
-
-        if sender.observer_cancelled() {
-            //we don't really need to notify the observer here.  Also the notifier will run upon drop.
-            return Poll::Ready(());
-        }
-        //perform poll
-        let f = future.poll(cx);
-        //clear local properties
-        unsafe {
-            TASK_LABEL.with_mut(|l| {
-                let read_label = l.take().expect("Label not set");
-                *label = Some(read_label);
-            });
-            TASK_PRIORITY.with_mut(|p| {
-                *p = None;
-            });
-            IS_CANCELLED.with_mut(|c| {
-                let read_cancellation = c.take().expect("Cancellation not set");
-                *cancellation = Some(read_cancellation);
-            });
-            TASK_ID.with_mut(|i| {
-                *i = None;
-            });
-            TASK_EXECUTOR.with_mut(|e| {
-                *e = None;
-            });
-
-            TASK_LOCAL_EXECUTOR.with(|e| {
-                e.borrow_mut().take().expect("Local executor not set");
-            });
-        };
-
-        match f {
-            Poll::Ready(r) => {
-                sender.get_mut().send(r);
-                Poll::Ready(())
-            }
-            Poll::Pending => {
-                Poll::Pending
-            }
-        }
+        common_poll(future,sender.get_mut(),label.get_mut(),cancellation.get_mut(),&mut None,Some(executor),*priority.get_mut(),task_id,poll_after,cx)
     }
 }
 
