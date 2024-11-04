@@ -732,9 +732,13 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
 
     /**
     ObjSafe type-erased wrapper for [SpawnedTask].
+
+    If you have no relevant parameter for [LocalExecutorType], choose [Infallible].
     */
-    pub trait DynSpawnedTask<Executor> {
-        fn poll<'l, L: SomeLocalExecutor<'l>>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, local_executor: Option<&mut L>) -> std::task::Poll<()>;
+    pub trait DynSpawnedTask<LocalExecutorType> {
+        fn poll<'l>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, local_executor: Option<&mut LocalExecutorType>) -> std::task::Poll<()>
+        where LocalExecutorType: SomeLocalExecutor<'l>;
+
         fn poll_after(&self) -> std::time::Instant;
         fn label(&self) -> &str;
 
@@ -744,9 +748,13 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
         fn priority(&self) -> priority::Priority;
     }
 
-    impl<F: Future, N: ObserverNotified<<F as Future>::Output>, E> DynSpawnedTask<E> for SpawnedTask<F, N, E> {
-        fn poll<'l,L: SomeLocalExecutor<'l>>(self: Pin<&mut Self>, cx: &mut Context<'_>, local_executor: Option<&mut L>) -> Poll<()> {
+    impl<F: Future, N: ObserverNotified<<F as Future>::Output>, E,L> DynSpawnedTask<L> for SpawnedTask<F, N, E> {
+        fn poll<'l>(self: Pin<&mut Self>, cx: &mut Context<'_>, local_executor: Option<&mut L>) -> Poll<()>
+        where
+            L: SomeLocalExecutor<'l>,
+        {
             SpawnedTask::poll(self, cx, local_executor)
+
         }
 
         fn poll_after(&self) -> Instant {
@@ -929,7 +937,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
         use std::future::Future;
         use std::pin::Pin;
         use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
-        use crate::task::{DynLocalSpawnedTask, SpawnedTask, Task};
+        use crate::task::{DynLocalSpawnedTask, DynSpawnedTask, SpawnedTask, Task};
         use crate::{task_local, SomeExecutor, SomeLocalExecutor};
 
         #[test]
@@ -953,6 +961,10 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
 
             fn assert_send<T: Send>(_: T) {}
             assert_send(scoped);
+        }
+
+        #[test] fn test_dyntask_objsafe() {
+            let _d: &dyn DynSpawnedTask<Infallible>;
         }
 
         #[test]
