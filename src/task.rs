@@ -689,6 +689,8 @@ pub trait DynLocalSpawnedTask<Executor> {
     fn poll_after(&self) -> std::time::Instant;
     fn label(&self) -> &str;
 
+    fn task_id(&self) -> TaskID;
+
     fn hint(&self) -> Hint;
     fn priority(&self) -> priority::Priority;
 }
@@ -715,6 +717,10 @@ where
     }
     fn priority(&self) -> priority::Priority {
         self.priority()
+    }
+
+    fn task_id(&self) -> TaskID {
+        self.task_id()
     }
 }
 
