@@ -1,6 +1,7 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
 use std::any::Any;
+use std::convert::Infallible;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use crate::task::{InFlightTaskCancellation, TaskID};
@@ -201,7 +202,8 @@ pub trait ObserverNotified<T: ?Sized>: Unpin + 'static {
 A trait for executors to receive notifications.
 
 Handling notifications is optional.  If your executor does not want to bother, pass `None` in place
-of functions taking this type, and set the type to [NoNotified].
+of functions taking this type, and set the type to `std::convert::Infallible`.  This is a special type
+that cannot be constructed, yet it has implementations of the traits required.
 */
 pub trait ExecutorNotified: 'static {
     /**
@@ -213,14 +215,8 @@ pub trait ExecutorNotified: 'static {
     fn request_cancel(&mut self);
 }
 
-/**
-A placeholder type that implements ObserverNotified and ExecutorNotified, but panics when used.
 
-You can use this to specify that you don't want to use notifications.
-*/
-#[derive(Debug,Clone,Copy,PartialEq,Eq,Hash)]
-pub struct NoNotified;
-impl<T> ObserverNotified<T> for NoNotified {
+impl<T> ObserverNotified<T> for Infallible {
     fn notify(&mut self, _value: &T) {
         panic!("NoNotified should not be used");
     }
@@ -233,7 +229,7 @@ impl ObserverNotified<Box<(dyn std::any::Any + 'static)>> for Box<dyn ObserverNo
     }
 }
 
-impl<'executor> ExecutorNotified for NoNotified {
+impl<'executor> ExecutorNotified for Infallible {
     fn request_cancel(&mut self) {
         panic!("NoNotified should not be used");
     }

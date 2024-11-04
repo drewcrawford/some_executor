@@ -64,10 +64,11 @@ mod local;
 pub type Priority = priority::Priority;
 
 use std::any::Any;
+use std::convert::Infallible;
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
-use crate::observer::{ExecutorNotified, NoNotified, Observer, ObserverNotified};
+use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
 use crate::task::Task;
 /*
 Design notes.
@@ -196,7 +197,7 @@ pub trait SomeLocalExecutor<'future> {
 /**
 The appropriate type for a dynamically-dispatched executor.
 */
-pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier=NoNotified>;
+pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier=Infallible>;
 
 
 impl Debug for DynExecutor {

@@ -2,6 +2,7 @@
 
 use std::any::Any;
 use std::cell::RefCell;
+use std::convert::Infallible;
 use std::fmt::Debug;
 use std::future::{Future};
 use std::marker::PhantomData;
@@ -11,7 +12,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::task::{Poll};
 use crate::hint::Hint;
-use crate::observer::{observer_channel, ExecutorNotified, NoNotified, Observer, ObserverNotified, ObserverSender};
+use crate::observer::{observer_channel, ExecutorNotified, Observer, ObserverNotified, ObserverSender};
 use crate::{task_local, DynExecutor, SomeLocalExecutor, Priority, SomeExecutor};
 use crate::local::UnsafeErasedLocalExecutor;
 
@@ -92,7 +93,7 @@ where
     //these task_local properties optional so we can take/replace them
     label: Option<String>,
     cancellation: Option<InFlightTaskCancellation>,
-    executor: Option<Box<dyn SomeExecutor<ExecutorNotifier=NoNotified>>>,
+    executor: Option<Box<dyn SomeExecutor<ExecutorNotifier=Infallible>>>,
     priority: Priority, //copy,so no need to repair/replace them, boring
     task_id: TaskID, //boring
 }
@@ -428,7 +429,7 @@ impl<F: Future, N> Task<F, N> {
     }
 }
 
-impl<F: Future> Task<F, NoNotified> {
+impl<F: Future> Task<F, Infallible> {
     /**
     Spawns a task, without performing inline notification.
 
@@ -796,7 +797,7 @@ impl Future for DefaultFuture {
         Poll::Ready(())
     }
 }
-impl Default for Task<DefaultFuture, NoNotified> {
+impl Default for Task<DefaultFuture, Infallible> {
     fn default() -> Self {
         Task::with_notifications("".to_string(), DefaultFuture, Configuration::default(), None)
     }
@@ -836,25 +837,25 @@ Analogously, for spawned task...
  */
 
 
-impl<F: Future> AsRef<F> for SpawnedTask<F, NoNotified, NoNotified> {
+impl<F: Future,N,E> AsRef<F> for SpawnedTask<F, N, E> {
     fn as_ref(&self) -> &F {
         &self.task
     }
 }
 
-impl<F: Future> AsMut<F> for SpawnedTask<F, NoNotified, NoNotified> {
+impl<F: Future,N,E> AsMut<F> for SpawnedTask<F, N, E> {
     fn as_mut(&mut self) -> &mut F {
         &mut self.task
     }
 }
 
-impl<F: Future> AsRef<F> for SpawnedLocalTask<F, NoNotified, NoNotified> {
+impl<F: Future,N,E> AsRef<F> for SpawnedLocalTask<F, N, E> {
     fn as_ref(&self) -> &F {
         &self.task
     }
 }
 
-impl<F: Future> AsMut<F> for SpawnedLocalTask<F, NoNotified, NoNotified> {
+impl<F: Future,N,E> AsMut<F> for SpawnedLocalTask<F, N, E> {
     fn as_mut(&mut self) -> &mut F {
         &mut self.task
     }
@@ -921,14 +922,15 @@ impl AsRef<u64> for TaskID {
 #[cfg(test)]
 mod tests {
     use std::any::Any;
+    use std::convert::Infallible;
     use std::future::Future;
     use std::pin::Pin;
-    use crate::observer::{ExecutorNotified, NoNotified, Observer, ObserverNotified};
+    use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
     use crate::task::{DynLocalSpawnedTask, SpawnedTask, Task};
     use crate::{task_local, SomeExecutor, SomeLocalExecutor};
 
     #[test] fn test_create_task() {
-        let task: Task<_,NoNotified> = Task::with_notifications("test".to_string(), async {}, Default::default(), None);
+        let task: Task<_,Infallible> = Task::with_notifications("test".to_string(), async {}, Default::default(), None);
         assert_eq!(task.label(), "test");
     }
 
@@ -967,33 +969,33 @@ mod tests {
         }
 
         #[allow(unused)]
-        fn spawn_check<F: Future + Send, E: SomeExecutor>(task: Task<F, NoNotified>, exec: &mut E)
+        fn spawn_check<F: Future + Send, E: SomeExecutor>(task: Task<F, Infallible>, exec: &mut E)
         where
             F::Output: Send,
             E: Send,
         {
-            let spawned: SpawnedTask<F, NoNotified, E> = task.spawn(exec).0;
+            let spawned: SpawnedTask<F, Infallible, E> = task.spawn(exec).0;
             fn assert_send<T: Send>(_: T) {}
             assert_send(spawned);
         }
 
         #[allow(unused)]
-        fn spawn_check_sync<F: Future + Sync, E: SomeExecutor>(task: Task<F, NoNotified>, exec: &mut E)
+        fn spawn_check_sync<F: Future + Sync, E: SomeExecutor>(task: Task<F, Infallible>, exec: &mut E)
         where
             F::Output: Send,
             E::ExecutorNotifier: Sync,
         {
-            let spawned: SpawnedTask<F, NoNotified, E> = task.spawn(exec).0;
+            let spawned: SpawnedTask<F, Infallible, E> = task.spawn(exec).0;
             fn assert_sync<T: Sync>(_: T) {}
             assert_sync(spawned);
         }
 
         #[allow(unused)]
-        fn spawn_check_unpin<F: Future + Unpin, E: SomeExecutor>(task: Task<F, NoNotified>, exec: &mut E)
+        fn spawn_check_unpin<F: Future + Unpin, E: SomeExecutor>(task: Task<F, Infallible>, exec: &mut E)
         where
             E: Unpin,
         {
-            let spawned: SpawnedTask<F, NoNotified, E> = task.spawn(exec).0;
+            let spawned: SpawnedTask<F, Infallible, E> = task.spawn(exec).0;
             fn assert_unpin<T: Unpin>(_: T) {}
             assert_unpin(spawned);
         }
@@ -1007,7 +1009,7 @@ mod tests {
         struct ExLocalExecutor<'future>(Vec<Pin<Box<dyn DynLocalSpawnedTask<ExLocalExecutor<'future>> + 'future>>>);
 
         impl<'existing_tasks,'new_task> SomeLocalExecutor<'new_task> for ExLocalExecutor<'existing_tasks> where 'new_task: 'existing_tasks {
-            type ExecutorNotifier = NoNotified;
+            type ExecutorNotifier = Infallible;
 
             fn spawn_local<'a, F: Future, Notifier: ObserverNotified<F::Output>>(&'a mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
             where
