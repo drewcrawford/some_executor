@@ -507,8 +507,8 @@ where
             *i = None;
         });
         TASK_EXECUTOR.with_mut(|e| {
-            let read_executor = e.take().expect("Executor not set").expect("Executor not set");
-            *executor = Some(read_executor);
+            let read_executor = e.take().expect("Executor not set");
+            *executor = read_executor
         });
         TASK_LOCAL_EXECUTOR.with_borrow_mut(|e| {
             *e = None;
