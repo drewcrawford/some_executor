@@ -292,6 +292,12 @@ impl<F: Future, N> Task<F, N> {
     }
 
 
+    /**
+    The time after which the task should be polled.
+
+    Executors must not poll the task before this time.  An executor may choose to implement this in a variety of
+    ways, such as using a timer, sleeping the thread, etc.
+    */
     pub fn poll_after(&self) -> std::time::Instant {
         self.poll_after
     }
