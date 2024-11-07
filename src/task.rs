@@ -3,7 +3,7 @@
 use std::any::Any;
 use std::cell::RefCell;
 use std::convert::Infallible;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 use std::future::{Future};
 use std::marker::PhantomData;
 use std::ops::{Sub};
@@ -80,7 +80,6 @@ A task suitable for spawning.
 
 Executors convert [Task] into this type in order to poll the future.
 */
-#[derive(Debug)]
 pub struct SpawnedTask<F, ONotifier, Executor>
 where
     F: Future,
@@ -115,7 +114,6 @@ we can't do that.
 Instead what we need to do is inject the executor on each poll, which means that the task itself cannot be a future.
 
 */
-#[derive(Debug)]
 pub struct SpawnedLocalTask<F, ONotifier, Executor>
 where
     F: Future,
@@ -735,7 +733,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
 
     If you have no relevant type parameter, choose [Infallible].
     */
-    pub trait DynSpawnedTask<LocalExecutorType>: Send {
+    pub trait DynSpawnedTask<LocalExecutorType>: Send + Debug {
         fn poll<'l>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, local_executor: Option<&mut LocalExecutorType>) -> std::task::Poll<()>
         where LocalExecutorType: SomeLocalExecutor<'l>;
 
@@ -747,6 +745,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
         fn hint(&self) -> Hint;
         fn priority(&self) -> priority::Priority;
     }
+
 
     impl<F: Future, N: ObserverNotified<<F as Future>::Output>, E,L> DynSpawnedTask<L> for SpawnedTask<F, N, E>
     where F: Send, E: Send, N: Send, F::Output: Send{
@@ -818,6 +817,30 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
             Task::with_notifications("".to_string(), DefaultFuture, Configuration::default(), None)
         }
     }
+
+impl<F: Future,N,E> Debug for SpawnedTask<F,N,E> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpawnedTask")
+            .field("poll_after", &self.poll_after)
+            .field("hint", &self.hint)
+            .field("label", &self.label)
+            .field("priority", &self.priority)
+            .field("task_id", &self.task_id)
+            .finish()
+    }
+}
+
+impl<F: Future,N,E> Debug for SpawnedLocalTask<F,N,E> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpawnedLocalTask")
+            .field("poll_after", &self.poll_after)
+            .field("hint", &self.hint)
+            .field("label", &self.label)
+            .field("priority", &self.priority)
+            .field("task_id", &self.task_id)
+            .finish()
+    }
+}
 
     /*
     Support from for the Future type
@@ -930,6 +953,39 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
             &self.0
         }
     }
+
+/*dyn traits boilerplate
+
+Don't want to implement eq, etc. at this time –use task ID.
+
+AsRef / sure, why not
+ */
+
+impl<'a, F,N,E> AsRef<dyn DynSpawnedTask<Infallible> + 'a> for SpawnedTask<F,N,E>
+where N: ObserverNotified<F::Output>,
+    F: Future + 'a,
+F: Send,
+N: Send,
+E: Send + 'a,
+F::Output: Send,{
+    fn as_ref(&self) -> &(dyn DynSpawnedTask<Infallible> + 'a) {
+        self
+    }
+}
+
+impl<'a, F,N,E> AsMut<dyn DynSpawnedTask<Infallible> + 'a> for SpawnedTask<F,N,E>
+where N: ObserverNotified<F::Output>,
+      F: Future + 'a,
+      F: Send,
+      N: Send,
+      E: Send + 'a,
+      F::Output: Send,{
+    fn as_mut(&mut self) -> &mut (dyn DynSpawnedTask<Infallible> + 'a) {
+        self
+    }
+}
+
+
 
     #[cfg(test)]
     mod tests {
