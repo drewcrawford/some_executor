@@ -1,6 +1,6 @@
 # some_executor
 
-!`logo`(art/logo.png)
+![logo](art/logo.png)
 
 Rust made the terrible mistake of not having an async executor in std.  And worse: there is no
 trait for executors to implement, nor a useful API for users to expect.  The result is everyone has to write
