@@ -1,6 +1,6 @@
+//SPDX-License-Identifier: MIT OR Apache-2.0
 use std::sync::OnceLock;
 use crate::{DynExecutor};
-//SPDX-License-Identifier: MIT OR Apache-2.0
 
 static GLOBAL_RUNTIME: OnceLock<Box<DynExecutor>> = OnceLock::new();
 
@@ -13,8 +13,8 @@ The runtime must have been initialized with `set_global_runtime`.
 # example
 ```
 use some_executor::global_executor::global_executor;
-let e = global_executor(|e| e.unwrap().clone_box());
-* ```
+let e = global_executor(|e| e.map(|e| e.clone_box()));
+```
 */
 pub fn global_executor<R>(c: impl FnOnce(Option<&DynExecutor>) -> R) -> R {
     let e = GLOBAL_RUNTIME.get();

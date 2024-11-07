@@ -44,7 +44,7 @@ Observes information about a task.
 
 Dropping the observer requests cancellation.
 
-To detach instead, use [crate::task::Task::detach].
+To detach instead, use [Observer::detach].
 
 # Cancellation
 
@@ -251,7 +251,7 @@ pub(crate) fn observer_channel<'enotifier, R,ONotifier,ENotifier: ExecutorNotifi
 
 
 /**
-Allow a Box<dyn ExecutorNotified> to be used as an ExecutorNotified directly.
+Allow a `Box<dyn ExecutorNotified>` to be used as an ExecutorNotified directly.
 
 The implementation proceeds by dyanmic dispatch.
 */

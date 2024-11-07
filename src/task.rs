@@ -106,9 +106,9 @@ Executors convert [Task] into this type in order to poll the future.
 # Design note
 
 [SpawnedTask] has an embedded copy of the executor. This is fine for that type, since shared executors
-necessarily involve some nice owned type, like a channel or Arc<Mutex>.
+necessarily involve some nice owned type, like a channel or `Arc<Mutex>`.
 
-[LocalExecutor] is quite different, and may be implemented as a reference to a local executor.  A few issues
+[SomeLocalExecutor] is quite different, and may be implemented as a reference to a local executor.  A few issues
 with this, the big one is that we want to spawn with `&mut Executor`, but if tasks embed some kind of &Executor,
 we can't do that.
 
@@ -250,7 +250,7 @@ task_local! {
 }
 
 thread_local! {
-    static TASK_LOCAL_EXECUTOR: RefCell<Option<Box<dyn SomeLocalExecutor<'static, ExecutorNotifier=Box<dyn ExecutorNotified>>>>> = RefCell::new(None);
+    pub static TASK_LOCAL_EXECUTOR: RefCell<Option<Box<dyn SomeLocalExecutor<'static, ExecutorNotifier=Box<dyn ExecutorNotified>>>>> = RefCell::new(None);
 }
 
 impl<F: Future, N> Task<F, N> {
@@ -733,7 +733,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
     /**
     ObjSafe type-erased wrapper for [SpawnedTask].
 
-    If you have no relevant parameter for [LocalExecutorType], choose [Infallible].
+    If you have no relevant type parameter, choose [Infallible].
     */
     pub trait DynSpawnedTask<LocalExecutorType>: Send {
         fn poll<'l>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, local_executor: Option<&mut LocalExecutorType>) -> std::task::Poll<()>
