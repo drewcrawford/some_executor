@@ -1,6 +1,6 @@
 [package]
 name = "some_executor"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Drew Crawford <drew@sealedabstract.com>"]
 edition = "2021"
 description = "A trait for libraries that abstract over any executor"
