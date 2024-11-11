@@ -34,7 +34,9 @@ pub fn set_global_executor(runtime: Box<DynExecutor>) {
     use crate::global_executor::{global_executor};
     use crate::task::{ConfigurationBuilder, Task};
 
-    #[test] fn global_pattern() {
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn global_pattern() {
         #[allow(unused)]
         fn dont_execute_just_compile() {
             let mut runtime = global_executor(|e| e.unwrap().clone_box());

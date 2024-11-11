@@ -6,12 +6,10 @@ use std::convert::Infallible;
 use std::fmt::{Debug, Formatter};
 use std::future::{Future};
 use std::marker::PhantomData;
-use std::ops::{Sub};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::task::{Context, Poll};
-use std::time::Instant;
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, Observer, ObserverNotified, ObserverSender};
 use crate::{task_local, DynExecutor, SomeLocalExecutor, Priority, SomeExecutor};
@@ -69,7 +67,7 @@ where
     future: F,
     hint: Hint,
     label: String,
-    poll_after: std::time::Instant,
+    poll_after: crate::sys::Instant,
     notifier: Option<N>,
     priority: Priority,
     task_id: TaskID,
@@ -87,7 +85,7 @@ where
     task: F,
     sender: ObserverSender<F::Output, ONotifier>,
     phantom: PhantomData<Executor>,
-    poll_after: std::time::Instant,
+    poll_after: crate::sys::Instant,
     hint: Hint,
     //these task_local properties optional so we can take/replace them
     label: Option<String>,
@@ -120,7 +118,7 @@ where
 {
     task: F,
     sender: ObserverSender<F::Output, ONotifier>,
-    poll_after: std::time::Instant,
+    poll_after: crate::sys::Instant,
     executor: PhantomData<Executor>,
     //these task-local properties are optional so we can move them in and out
     label: Option<String>,
@@ -149,7 +147,7 @@ impl<F: Future, ONotifier, ENotifier> SpawnedTask<F, ONotifier, ENotifier> {
     //     self.task.get_future().get_future().get_val(|cancellation| cancellation.clone())
     // }
 
-    pub fn poll_after(&self) -> std::time::Instant {
+    pub fn poll_after(&self) -> crate::sys::Instant {
         self.poll_after
     }
 
@@ -179,7 +177,7 @@ impl<'executor, F: Future, ONotifier, Executor> SpawnedLocalTask<F, ONotifier, E
     //     self.task.get_future().get_future().get_val(|cancellation| cancellation.clone())
     // }
 
-    pub fn poll_after(&self) -> std::time::Instant {
+    pub fn poll_after(&self) -> crate::sys::Instant {
         self.poll_after
     }
 
@@ -298,7 +296,7 @@ impl<F: Future, N> Task<F, N> {
     Executors must not poll the task before this time.  An executor may choose to implement this in a variety of
     ways, such as using a timer, sleeping the thread, etc.
     */
-    pub fn poll_after(&self) -> std::time::Instant {
+    pub fn poll_after(&self) -> crate::sys::Instant {
         self.poll_after
     }
 
@@ -456,13 +454,13 @@ impl<F: Future> Task<F, Infallible> {
 fn common_poll<'l, F, N, L>(future: Pin<&mut F>, sender: &mut ObserverSender<F::Output, N>, label: &mut Option<String>, cancellation: &mut Option<InFlightTaskCancellation>,
                             executor: &mut Option<Box<dyn SomeExecutor<ExecutorNotifier=Infallible>>>,
                             local_executor: Option<&mut L>,
-                            priority: Priority, task_id: TaskID, poll_after: Instant, cx: &mut Context) -> std::task::Poll<()>
+                            priority: Priority, task_id: TaskID, poll_after: crate::sys::Instant, cx: &mut Context) -> std::task::Poll<()>
 where
     F: Future,
     N: ObserverNotified<F::Output>,
     L: SomeLocalExecutor<'l> ,
 {
-    assert!(poll_after <= std::time::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
+    assert!(poll_after <= crate::sys::Instant::now(), "Conforming executors should not poll tasks before the poll_after time.");
     if sender.observer_cancelled() {
         //we don't really need to notify the observer here.  Also the notifier will run upon drop.
         return Poll::Ready(());
@@ -623,7 +621,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
     pub struct Configuration {
         hint: Hint,
         priority: priority::Priority,
-        poll_after: std::time::Instant,
+        poll_after: crate::sys::Instant,
     }
 
     /**
@@ -633,7 +631,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
     pub struct ConfigurationBuilder {
         hint: Option<Hint>,
         priority: Option<Priority>,
-        poll_after: Option<std::time::Instant>,
+        poll_after: Option<crate::sys::Instant>,
     }
 
     impl ConfigurationBuilder {
@@ -667,7 +665,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
         /**
         Provide a time after which the future should be polled.
         */
-        pub fn poll_after(mut self, poll_after: std::time::Instant) -> Self {
+        pub fn poll_after(mut self, poll_after: crate::sys::Instant) -> Self {
             self.poll_after = Some(poll_after);
             self
         }
@@ -676,13 +674,13 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
             Configuration {
                 hint: self.hint.unwrap_or_else(|| Hint::default()),
                 priority: self.priority.unwrap_or_else(|| priority::Priority::Unknown),
-                poll_after: self.poll_after.unwrap_or_else(|| std::time::Instant::now().sub(std::time::Duration::from_secs(1))),
+                poll_after: self.poll_after.unwrap_or_else(|| crate::sys::Instant::now()),
             }
         }
     }
 
     impl Configuration {
-        pub fn new(hint: Hint, priority: priority::Priority, poll_after: std::time::Instant) -> Self {
+        pub fn new(hint: Hint, priority: priority::Priority, poll_after: crate::sys::Instant) -> Self {
             Configuration {
                 hint,
                 priority,
@@ -696,7 +694,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
     */
     pub trait DynLocalSpawnedTask<Executor> {
         fn poll<'executor>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, executor: &'executor mut Executor, some_executor: Option<Box<(dyn SomeExecutor<ExecutorNotifier=Infallible> + 'static)>>) -> std::task::Poll<()>;
-        fn poll_after(&self) -> std::time::Instant;
+        fn poll_after(&self) -> crate::sys::Instant;
         fn label(&self) -> &str;
 
         fn task_id(&self) -> TaskID;
@@ -715,7 +713,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
             SpawnedLocalTask::poll(self, cx, executor, some_executor)
         }
 
-        fn poll_after(&self) -> std::time::Instant {
+        fn poll_after(&self) -> crate::sys::Instant {
             self.poll_after
         }
         fn label(&self) -> &str {
@@ -743,7 +741,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
         fn poll<'l>(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, local_executor: Option<&mut LocalExecutorType>) -> std::task::Poll<()>
         where LocalExecutorType: SomeLocalExecutor<'l>;
 
-        fn poll_after(&self) -> std::time::Instant;
+        fn poll_after(&self) -> crate::sys::Instant;
         fn label(&self) -> &str;
 
         fn task_id(&self) -> TaskID;
@@ -763,7 +761,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
 
         }
 
-        fn poll_after(&self) -> Instant {
+        fn poll_after(&self) -> crate::sys::Instant {
             self.poll_after()
         }
 
@@ -794,7 +792,7 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
             Configuration {
                 hint: Hint::default(),
                 priority: priority::Priority::Unknown,
-                poll_after: std::time::Instant::now().sub(std::time::Duration::from_secs(1)),
+                poll_after: crate::sys::Instant::now(),
             }
         }
     }
@@ -1003,18 +1001,21 @@ where N: ObserverNotified<F::Output>,
         use crate::task::{DynLocalSpawnedTask, DynSpawnedTask, SpawnedTask, Task};
         use crate::{task_local, SomeExecutor, SomeLocalExecutor};
 
-        #[test]
+        #[cfg_attr(not(target_arch = "wasm32"), test)]
+        #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
         fn test_create_task() {
             let task: Task<_, Infallible> = Task::with_notifications("test".to_string(), async {}, Default::default(), None);
             assert_eq!(task.label(), "test");
         }
 
-        #[test]
+        #[cfg_attr(not(target_arch = "wasm32"), test)]
+        #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
         fn test_create_no_notify() {
             let t = Task::without_notifications("test".to_string(), async {}, Default::default());
             assert_eq!(t.label(), "test");
         }
-        #[test]
+        #[cfg_attr(not(target_arch = "wasm32"), test)]
+        #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
         fn test_send() {
             task_local!(
             static FOO: u32;
@@ -1026,11 +1027,14 @@ where N: ObserverNotified<F::Output>,
             assert_send(scoped);
         }
 
-        #[test] fn test_dyntask_objsafe() {
+        #[cfg_attr(not(target_arch = "wasm32"), test)]
+        #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+        fn test_dyntask_objsafe() {
             let _d: &dyn DynSpawnedTask<Infallible>;
         }
 
-        #[test]
+        #[cfg_attr(not(target_arch = "wasm32"), test)]
+        #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
         fn test_send_task() {
             #[allow(unused)]
             fn task_check<F: Future + Send, N: Send>(task: Task<F, N>) {
@@ -1082,7 +1086,8 @@ where N: ObserverNotified<F::Output>,
         }
 
 
-        #[test]
+        #[cfg_attr(not(target_arch = "wasm32"), test)]
+        #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
         fn test_local_executor() {
             struct ExLocalExecutor<'future>(Vec<Pin<Box<dyn DynLocalSpawnedTask<ExLocalExecutor<'future>> + 'future>>>);
 

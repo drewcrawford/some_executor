@@ -301,7 +301,9 @@ impl <T> From<Observation<T>> for Option<T> {
 #[cfg(test)] mod tests {
     use crate::observer::{ExecutorNotified, Observer};
 
-    #[test] fn test_send() {
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn test_send() {
 
         /* observer can send when the underlying value can */
         #[allow(unused)]
@@ -310,7 +312,9 @@ impl <T> From<Observation<T>> for Option<T> {
             assert_send::<Observer<T,E>>();
         }
     }
-    #[test] fn test_unpin() {
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn test_unpin() {
         /* observer can unpin */
         #[allow(unused)]
         fn ex<'executor, T,E: ExecutorNotified + Unpin>(_observer: Observer<T,E>) {

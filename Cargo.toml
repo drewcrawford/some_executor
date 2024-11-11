@@ -14,3 +14,11 @@ exclude = [".*","art"]
 
 [dependencies]
 priority = "0.1.1"
+
+[target.'cfg(target_arch="wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+web-time = "1.1"
+
+
+[target.'cfg(target_arch="wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3.45"

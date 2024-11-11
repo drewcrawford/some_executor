@@ -431,7 +431,9 @@ drop is sort of specious for static types
  */
 
 #[cfg(test)] mod tests {
-    #[test] fn local() {
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn local() {
         task_local! {
             #[allow(unused)]
             static FOO: u32;

@@ -98,6 +98,9 @@ pub mod observer;
 pub mod thread_executor;
 pub mod current_executor;
 mod local;
+mod sys;
+
+pub use sys::Instant as Instant;
 
 pub type Priority = priority::Priority;
 
@@ -303,8 +306,11 @@ impl<'future> SomeLocalExecutor<'future> for Infallible {
 #[cfg(test)]
 mod tests {
     use crate::{DynExecutor};
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_is_objsafe() {
         #[allow(unused)]
         fn is_objsafe(_obj: &DynExecutor) {}
