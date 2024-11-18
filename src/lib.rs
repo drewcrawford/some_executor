@@ -38,7 +38,7 @@ some_executor provides many different API options for many usecases.
 4.  You can spawn onto the "current" executor, at task level [current_executor] or thread level [thread_executor].  This is useful in case you don't want to take an executor as an argument, but your caller probably has one, and you can borrow that.
 5.  You can spawn onto a program-wide [global_executor].  This is useful in case you don't want to take it as an argument, you aren't sure what your caller is doing (for example you might be handling a signal), and you nonetheless want to spawn a task.
 
-Spawning a task is as simple as calling `spawn` on any of the executor types.  Then you get an [Observer] object that you can use to get the results of the task, if interested, or cancel the task.
+Spawning a task is as simple as calling `spawn` on any of the executor types.  Then you get an [TypedObserver] object that you can use to get the results of the task, if interested, or cancel the task.
 
 ## Reference executors:
 
@@ -109,7 +109,7 @@ use std::convert::Infallible;
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
-use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
+use crate::observer::{ExecutorNotified, TypedObserver, ObserverNotified};
 use crate::task::Task;
 /*
 Design notes.
@@ -145,7 +145,7 @@ pub trait SomeExecutor: Send + Sync {
     # Implementation notes
     Implementations should generally ensure that a dlog-context is available to the future.
     */
-    fn spawn<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
+    fn spawn<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> TypedObserver<F::Output, Self::ExecutorNotifier>
     where
         Self: Sized,
         F::Output: Send;
@@ -156,7 +156,7 @@ pub trait SomeExecutor: Send + Sync {
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
     */
-    fn spawn_async<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>> + Send + 'static
+    fn spawn_async<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=TypedObserver<F::Output, Self::ExecutorNotifier>> + Send + 'static
     where
         Self: Sized,
         F::Output: Send;
@@ -168,7 +168,7 @@ pub trait SomeExecutor: Send + Sync {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Observer<Box<dyn Any + 'static + Send>, Box<dyn ExecutorNotified + 'static + Send>>;
+    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> TypedObserver<Box<dyn Any + 'static + Send>, Box<dyn ExecutorNotified + 'static + Send>>;
 
     /**
     Clones the executor.
@@ -202,7 +202,7 @@ pub trait SomeLocalExecutor<'future> {
     - `task`: The task to spawn.
 
     */
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
+    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> TypedObserver<F::Output, Self::ExecutorNotifier>
     where
         Self: Sized,
         F: 'future,
@@ -215,7 +215,7 @@ pub trait SomeLocalExecutor<'future> {
 
     Like [Self::spawn_local], but some implementors may have a fast path for the async context.
     */
-    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
+    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=TypedObserver<F::Output, Self::ExecutorNotifier>>
     where
         Self: Sized,
         F: 'future;
@@ -227,9 +227,9 @@ pub trait SomeLocalExecutor<'future> {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>;
+    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> TypedObserver<Box<dyn Any>, Box<dyn ExecutorNotified>>;
 
-    fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 's>;
+    fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=TypedObserver<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 's>;
 
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
@@ -272,7 +272,7 @@ pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor<'tasks> {}
 impl<'future> SomeLocalExecutor<'future> for Infallible {
     type ExecutorNotifier = Infallible;
 
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> Observer<F::Output, Self::ExecutorNotifier>
+    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> TypedObserver<F::Output, Self::ExecutorNotifier>
     where
         Self: Sized,
         F: 'future,
@@ -281,7 +281,7 @@ impl<'future> SomeLocalExecutor<'future> for Infallible {
         unimplemented!()
     }
 
-    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> impl Future<Output=Observer<F::Output, Self::ExecutorNotifier>>
+    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> impl Future<Output=TypedObserver<F::Output, Self::ExecutorNotifier>>
     where
         Self: Sized,
         F: 'future
@@ -289,11 +289,11 @@ impl<'future> SomeLocalExecutor<'future> for Infallible {
         async {unimplemented!()}
     }
 
-    fn spawn_local_objsafe(&mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Observer<Box<dyn Any>, Box<dyn ExecutorNotified>> {
+    fn spawn_local_objsafe(&mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> TypedObserver<Box<dyn Any>, Box<dyn ExecutorNotified>> {
         unimplemented!()
     }
 
-    fn spawn_local_objsafe_async<'s>(&'s mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Observer<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 's> {
+    fn spawn_local_objsafe_async<'s>(&'s mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=TypedObserver<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 's> {
         unimplemented!()
     }
 
