@@ -69,6 +69,7 @@ pub trait Observer {
 
 
 
+
 /**
 A typed observer is an observer that is typed to a specific value.
 */
@@ -179,9 +180,6 @@ impl<T,E: ExecutorNotified> TypedObserver<T,E> {
         }
     }
 
-    pub(crate) fn into_boxed_notifier(mut self) -> TypedObserver< T,Box<dyn ExecutorNotified>> {
-        TypedObserver { shared: self.shared.clone(), task_id: self.task_id, notifier: self.notifier.take().map(|n| Box::new(n) as Box<dyn ExecutorNotified>), detached: self.detached }
-    }
     /**
     Returns the task id of the task being observed.
 */

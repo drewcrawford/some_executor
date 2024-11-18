@@ -997,7 +997,7 @@ where N: ObserverNotified<F::Output>,
         use std::convert::Infallible;
         use std::future::Future;
         use std::pin::Pin;
-        use crate::observer::{ExecutorNotified, TypedObserver, ObserverNotified};
+        use crate::observer::{ObserverNotified, Observer};
         use crate::task::{DynLocalSpawnedTask, DynSpawnedTask, SpawnedTask, Task};
         use crate::{task_local, SomeExecutor, SomeLocalExecutor};
 
@@ -1097,7 +1097,7 @@ where N: ObserverNotified<F::Output>,
             {
                 type ExecutorNotifier = Infallible;
 
-                fn spawn_local<'a, F: Future, Notifier: ObserverNotified<F::Output>>(&'a mut self, task: Task<F, Notifier>) -> TypedObserver<F::Output, Self::ExecutorNotifier>
+                fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Observer<Value=F::Output>
                 where
                     Self: Sized,
                     F: 'new_task,
@@ -1110,7 +1110,7 @@ where N: ObserverNotified<F::Output>,
                     observer
                 }
 
-                fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=TypedObserver<F::Output, Self::ExecutorNotifier>>
+                fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=impl Observer<Value=F::Output>>
                 where
                     Self: Sized,
                     F: 'new_task,
@@ -1123,19 +1123,19 @@ where N: ObserverNotified<F::Output>,
                     }
                 }
 
-                fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> TypedObserver<Box<dyn Any>, Box<dyn ExecutorNotified>> {
+                fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value=Box<dyn Any>>> {
                     let (spawn, observer) = task.spawn_local_objsafe(self);
                     let pinned_spawn = Box::pin(spawn);
                     self.0.push(pinned_spawn);
-                    observer
+                    Box::new(observer)
                 }
 
-                fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=TypedObserver<Box<dyn Any>, Box<dyn ExecutorNotified>>> + 's> {
+                fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any>>>> + 's> {
                     Box::new(async {
                         let (spawn, observer) = task.spawn_local_objsafe(self);
                         let pinned_spawn = Box::pin(spawn);
                         self.0.push(pinned_spawn);
-                        observer
+                        Box::new(observer) as Box<dyn Observer<Value=Box<dyn Any>>>
                     })
                 }
 
