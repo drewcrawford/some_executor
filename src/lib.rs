@@ -109,7 +109,7 @@ use std::convert::Infallible;
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
-use crate::observer::{ExecutorNotified, TypedObserver, ObserverNotified};
+use crate::observer::{ExecutorNotified, TypedObserver, ObserverNotified, Observer};
 use crate::task::Task;
 /*
 Design notes.
@@ -145,7 +145,7 @@ pub trait SomeExecutor: Send + Sync {
     # Implementation notes
     Implementations should generally ensure that a dlog-context is available to the future.
     */
-    fn spawn<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> TypedObserver<F::Output, Self::ExecutorNotifier>
+    fn spawn<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> impl Observer<Value=F::Output>
     where
         Self: Sized,
         F::Output: Send;
@@ -156,7 +156,7 @@ pub trait SomeExecutor: Send + Sync {
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
     */
-    fn spawn_async<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=TypedObserver<F::Output, Self::ExecutorNotifier>> + Send + 'static
+    fn spawn_async<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=impl Observer<Value=F::Output>> + Send + 'static
     where
         Self: Sized,
         F::Output: Send;
@@ -168,7 +168,7 @@ pub trait SomeExecutor: Send + Sync {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> TypedObserver<Box<dyn Any + 'static + Send>, Box<dyn ExecutorNotified + 'static + Send>>;
+    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Observer<Value=dyn Any + Send>>;
 
     /**
     Clones the executor.

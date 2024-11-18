@@ -38,13 +38,12 @@ struct Shared<T> {
     in_flight_task_cancellation: InFlightTaskCancellation,
 }
 
-
 /**
 Observes information about a task.
 
 Dropping the observer requests cancellation.
 
-To detach instead, use [TypedObserver::detach].
+To detach instead, use [Self::detach].
 
 # Cancellation
 
@@ -56,6 +55,23 @@ Cancellation in some_executor is optimistic.  There are three types:
 3.  The executor may support cancellation.  In this case, it may drop the future and not run it again.  This is not guaranteed.
 */
 #[must_use]
+pub trait Observer {
+    type Value;
+    fn observe(&self) -> Observation<Self::Value>;
+
+    fn task_id(&self) -> &TaskID;
+
+    fn detach(self) where Self: Sized {
+        std::mem::drop(self);
+    }
+}
+
+
+
+
+/**
+A typed observer is an observer that is typed to a specific value.
+*/
 #[derive(Debug)]
 pub struct TypedObserver<T,ENotifier:ExecutorNotified> {
     shared: Arc<Shared<T>>,
@@ -73,6 +89,18 @@ impl<'executor, T,ENotifier: ExecutorNotified> Drop for TypedObserver< T,ENotifi
             self.shared.in_flight_task_cancellation.cancel();
             self.notifier.take().map(|mut n| n.request_cancel());
         }
+    }
+}
+
+impl<T,ENotifier: ExecutorNotified> Observer for TypedObserver<T,ENotifier> {
+    type Value = T;
+
+    fn observe(&self) -> Observation<Self::Value> {
+        TypedObserver::observe(self)
+    }
+
+    fn task_id(&self) -> &TaskID {
+        TypedObserver::task_id(self)
     }
 }
 
