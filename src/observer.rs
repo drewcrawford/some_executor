@@ -55,7 +55,7 @@ Cancellation in some_executor is optimistic.  There are three types:
 3.  The executor may support cancellation.  In this case, it may drop the future and not run it again.  This is not guaranteed.
 */
 #[must_use]
-pub trait Observer {
+pub trait Observer: 'static {
     type Value;
     fn observe(&self) -> Observation<Self::Value>;
 
@@ -93,7 +93,7 @@ impl<'executor, T,ENotifier: ExecutorNotified> Drop for TypedObserver< T,ENotifi
     }
 }
 
-impl<T,ENotifier: ExecutorNotified> Observer for TypedObserver<T,ENotifier> {
+impl<T: 'static,ENotifier: ExecutorNotified> Observer for TypedObserver<T,ENotifier> {
     type Value = T;
 
     fn observe(&self) -> Observation<Self::Value> {

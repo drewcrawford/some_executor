@@ -34,8 +34,8 @@ impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>> SomeL
         Self: Sized,
         F: 'executor,
     /* I am a little uncertain whether this is really required */
-        <F as Future>::Output: Unpin
-    /*I am a little uncertain as to whether this is really required */
+        <F as Future>::Output: Unpin,
+        <F as Future>::Output: 'static,
     {
         self.executor.spawn_local(task)
     }
@@ -43,7 +43,8 @@ impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>> SomeL
     fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=impl Observer<Value=F::Output>>
     where
         Self: Sized,
-        F: 'executor
+        F: 'executor,
+        F::Output: 'static,
     {
         async {
             self.executor.spawn_local_async(task).await
@@ -105,7 +106,8 @@ impl<'a> SomeLocalExecutor<'a> for UnsafeErasedLocalExecutor {
         Self: Sized,
         F: 'a,
     /* I am a little uncertain whether this is really required */
-        <F as Future>::Output: Unpin
+        <F as Future>::Output: Unpin,
+        <F as Future>::Output: 'static,
     {
         #[allow(unreachable_code)] {
             unimplemented!("Not implemented for erased executor; use objsafe method") as TypedObserver<F::Output, Infallible>
@@ -114,7 +116,8 @@ impl<'a> SomeLocalExecutor<'a> for UnsafeErasedLocalExecutor {
 
     fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> impl Future<Output=impl Observer<Value=F::Output>>
     where
-        Self: Sized
+        Self: Sized,
+        F::Output: 'static,
     {
         #[allow(unreachable_code)] {
             async { unimplemented!("Not implemented for erased executor; use objsafe method") as TypedObserver<F::Output, Infallible> }

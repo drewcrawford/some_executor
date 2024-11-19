@@ -1101,6 +1101,7 @@ where N: ObserverNotified<F::Output>,
                 where
                     Self: Sized,
                     F: 'new_task,
+                    F::Output: 'static,
                 /* I am a little uncertain whether this is really required */
                     <F as Future>::Output: Unpin,
                 {
@@ -1114,6 +1115,7 @@ where N: ObserverNotified<F::Output>,
                 where
                     Self: Sized,
                     F: 'new_task,
+                    F::Output: 'static
                 {
                     async {
                         let (spawn, observer) = task.spawn_local(self);

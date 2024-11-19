@@ -207,7 +207,8 @@ pub trait SomeLocalExecutor<'future> {
         Self: Sized,
         F: 'future,
     /* I am a little uncertain whether this is really required */
-        <F as Future>::Output: Unpin
+        <F as Future>::Output: Unpin,
+        <F as Future>::Output: 'static,
     ;
 
     /**
@@ -218,7 +219,8 @@ pub trait SomeLocalExecutor<'future> {
     fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=impl Observer<Value=F::Output>>
     where
         Self: Sized,
-        F: 'future;
+        F: 'future,
+        <F as Future>::Output: 'static;
 
     /**
     Spawns a future onto the runtime.
@@ -276,7 +278,9 @@ impl<'future> SomeLocalExecutor<'future> for Infallible {
     where
         Self: Sized,
         F: 'future,
-        <F as Future>::Output: Unpin
+        <F as Future>::Output: Unpin,
+        <F as Future>::Output: 'static
+
     {
         #[allow(unreachable_code)] {
             unimplemented!() as TypedObserver<F::Output, Infallible>
@@ -286,7 +290,8 @@ impl<'future> SomeLocalExecutor<'future> for Infallible {
     fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(&mut self, _task: Task<F, Notifier>) -> impl Future<Output=impl Observer<Value=F::Output>>
     where
         Self: Sized,
-        F: 'future
+        F: 'future,
+        <F as Future>::Output: 'static
     {
         #[allow(unreachable_code)] {
             async {unimplemented!() as TypedObserver<F::Output, Infallible> }
