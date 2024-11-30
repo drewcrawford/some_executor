@@ -165,7 +165,7 @@ pub trait SomeExecutor: Send + Sync {
 
     For details on why F::Output is Unpin, see the comment on [observer::TypedObserver].
     */
-    fn spawn_async<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=impl Observer<Value=F::Output>> + Send + 'static
+    fn spawn_async<'s, F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&'s mut self, task: Task<F, Notifier>) -> impl Future<Output=impl Observer<Value=F::Output>> + Send + 's
     where
         Self: Sized,
         F::Output: Send + Unpin;
