@@ -99,6 +99,8 @@ pub mod thread_executor;
 pub mod current_executor;
 mod local;
 mod sys;
+mod dyn_executor;
+mod dyn_observer_notified;
 
 pub use sys::Instant as Instant;
 
@@ -144,22 +146,28 @@ pub trait SomeExecutor: Send + Sync {
 
     # Implementation notes
     Implementations should generally ensure that a dlog-context is available to the future.
+
+    For details on why F::Output is Unpin, see the comment on [observer::TypedObserver].
     */
     fn spawn<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> impl Observer<Value=F::Output>
     where
         Self: Sized,
-        F::Output: Send;
+        F::Output: Send + Unpin;
 
 
     /**
     Spawns a future onto the runtime.
 
     Like [Self::spawn], but some implementors may have a fast path for the async context.
+
+    # Implementation notes
+
+    For details on why F::Output is Unpin, see the comment on [observer::TypedObserver].
     */
     fn spawn_async<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=impl Observer<Value=F::Output>> + Send + 'static
     where
         Self: Sized,
-        F::Output: Send;
+        F::Output: Send + Unpin;
 
     /**
     Spawns a future onto the runtime.
