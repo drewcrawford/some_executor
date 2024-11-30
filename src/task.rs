@@ -13,6 +13,7 @@ use std::task::{Context, Poll};
 use crate::hint::Hint;
 use crate::observer::{observer_channel, ExecutorNotified, TypedObserver, ObserverNotified, ObserverSender};
 use crate::{task_local, DynExecutor, SomeLocalExecutor, Priority, SomeExecutor};
+use crate::dyn_observer_notified::ObserverNotifiedErased;
 use crate::local::UnsafeErasedLocalExecutor;
 
 /**
@@ -427,7 +428,24 @@ impl<F: Future, N> Task<F, N> {
         };
         (spawned_task, receiver)
     }
+
+    /**
+    Converts this task into one suitable for spawn_objsafe
+    */
+    pub fn into_objsafe(self) -> Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>
+    where N: ObserverNotified<F::Output> + Send,
+    F::Output: Send + Unpin + 'static,
+    F: Send + 'static {
+        let notifier = self.notifier.map(|n| Box::new(ObserverNotifiedErased::new(n)) as Box<dyn ObserverNotified<dyn Any + Send> + Send>);
+        Task::new_objsafe(self.label, Box::new(
+            async move {
+                Box::new(self.future.await) as Box<dyn Any + Send + 'static>
+            }
+        ), Configuration::new(self.hint, self.priority, self.poll_after), notifier)
+    }
 }
+
+//infalliable notification methods
 
 impl<F: Future> Task<F, Infallible> {
     /**
