@@ -30,14 +30,22 @@ impl<UnderlyingNotifier: ExecutorNotified + Send> SomeExecutor for Box<dyn SomeE
         downcasted
     }
 
-    fn spawn_async<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> impl Future<Output=impl Observer<Value=F::Output>> + Send + 'static
+    fn spawn_async<'s, F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&'s mut self, task: Task<F, Notifier>) -> impl Future<Output=impl Observer<Value=F::Output>> + Send + 's
     where
         Self: Sized,
         F::Output: Send + Unpin
     {
 
 
-        async { todo!() as TypedObserver<F::Output, DynNotifier>}
+
+        async {
+            let underlying = self.as_mut();
+            let objsafe = task.into_objsafe();
+            let observer = underlying.spawn_objsafe(objsafe);
+            //write in the type again
+            let downcasted: DowncastObserver<_,F::Output> =  DowncastObserver::new(observer);
+            downcasted
+        }
     }
 
     fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Observer<Value=Box<dyn Any + Send>>> {
