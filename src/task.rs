@@ -434,7 +434,7 @@ impl<F: Future, N> Task<F, N> {
     */
     pub fn into_objsafe(self) -> Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>
     where N: ObserverNotified<F::Output> + Send,
-    F::Output: Send + Unpin + 'static,
+    F::Output: Send + 'static + Unpin,
     F: Send + 'static {
         let notifier = self.notifier.map(|n| Box::new(ObserverNotifiedErased::new(n)) as Box<dyn ObserverNotified<dyn Any + Send> + Send>);
         Task::new_objsafe(self.label, Box::new(

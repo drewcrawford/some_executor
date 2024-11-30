@@ -207,7 +207,7 @@ also receive inline notifications for cancellation.
 
 # Design
 
-The notifier is used inline in a future, (in a pinned context).  Accordingly there are two
+The notifier is used inline in a future, (in a pinned context).  Accordingly, there are two
 possible designs:
 
 1.  Use immutable references to the notifier.  But notifiers may want to have some mutable state,
