@@ -49,14 +49,11 @@ impl<UnderlyingNotifier: ExecutorNotified + Send> SomeExecutor for Box<dyn SomeE
     }
 
     fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Observer<Value=Box<dyn Any + Send>>> {
-        let (spawn, observer) = task.spawn_objsafe(self);
-        todo!("actually spawn");
-
-        Box::new(observer)
+        self.as_mut().spawn_objsafe(task)
     }
 
-    fn spawn_objsafe_async(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any + Send>>>>> {
-        todo!() 
+    fn spawn_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any + Send>>>> + 's> {
+        self.as_mut().spawn_objsafe_async(task)
     }
 
     fn clone_box(&self) -> Box<DynExecutor> {
