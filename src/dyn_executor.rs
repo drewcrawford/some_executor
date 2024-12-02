@@ -6,16 +6,12 @@ use crate::{DynExecutor, SomeExecutor};
 use crate::dyn_observer::DowncastObserver;
 use crate::task::Task;
 
-pub struct DynNotifier(Box<dyn ExecutorNotified + Send>);
 
-impl ExecutorNotified for DynNotifier {
-    fn request_cancel(&mut self) {
-        self.0.request_cancel()
-    }
-}
+
+
 
 impl<UnderlyingNotifier: ExecutorNotified + Send> SomeExecutor for Box<dyn SomeExecutor<ExecutorNotifier = UnderlyingNotifier>> {
-    type ExecutorNotifier = DynNotifier;
+    type ExecutorNotifier = Box<dyn ExecutorNotified + Send>;
 
     fn spawn<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> impl Observer<Value=F::Output>
     where
@@ -62,7 +58,7 @@ impl<UnderlyingNotifier: ExecutorNotified + Send> SomeExecutor for Box<dyn SomeE
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
         let underlying = self.as_mut().executor_notifier();
-        underlying.map(|u| DynNotifier(Box::new(u)))
+        underlying.map(|u| Box::new(u) as Box<dyn ExecutorNotified + Send>)
     }
 }
 
