@@ -133,6 +133,11 @@ Code targeting this trait can spawn tasks on an executor without knowing which e
 If possible, use the [SomeExecutorExt] trait instead.  But this trait is useful if you need an objsafe trait.
 */
 pub trait SomeExecutor: Send + Sync {
+    /**
+    # Design notes
+    I think we want ExecutorNotified to imply Send (or at least in the case of SomeExecutor trait).
+    We want to permit the notifier to be sent into e.g. the future, running on a threadpool for example.
+     */
     type ExecutorNotifier: ExecutorNotified + Send;
     /**
     Spawns a future onto the runtime.

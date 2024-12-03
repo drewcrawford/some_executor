@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
-use crate::observer::{ExecutorNotified, Observer, ObserverNotified, TypedObserver};
+use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
 use crate::{DynExecutor, SomeExecutor};
 use crate::dyn_observer::DowncastObserver;
 use crate::task::Task;
@@ -66,9 +66,12 @@ impl<UnderlyingNotifier: ExecutorNotified + Send> SomeExecutor for Box<dyn SomeE
     use crate::{SomeExecutor,Infallible};
     #[test] fn test_dyn_executor() {
         //mt2-697
+        #[allow(dead_code)]
         fn just_compile() {
             let _ty: Box<dyn SomeExecutor<ExecutorNotifier = Infallible>> = todo!();
+            #[allow(unreachable_code,unused_variables)]
             fn expect_executor<E: SomeExecutor>(e: E) {}
+            #[allow(unreachable_code)]
             expect_executor(_ty);
         }
     }
