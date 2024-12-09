@@ -112,7 +112,7 @@ use std::convert::Infallible;
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
-use crate::observer::{ExecutorNotified, TypedObserver, ObserverNotified, Observer};
+use crate::observer::{ExecutorNotified, TypedObserver, ObserverNotified, Observer, FinishedObservation};
 use crate::task::Task;
 /*
 Design notes.
@@ -182,7 +182,7 @@ pub trait SomeExecutor: Send + Sync {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Observer<Value=Box<dyn Any + Send>>>;
+    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Observer<Value=Box<dyn Any + Send>, Output = FinishedObservation<Box<dyn Any + Send>>>>;
 
     /**
     Spawns a future onto the runtime.
@@ -191,7 +191,7 @@ pub trait SomeExecutor: Send + Sync {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any + Send>>>> + 's>;
+    fn spawn_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any + Send>, Output = FinishedObservation<Box<dyn Any + Send>>>>> + 's>;
 
 
     /**
@@ -253,9 +253,9 @@ pub trait SomeLocalExecutor<'future> {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value=Box<dyn Any>>>;
+    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value=Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>;
 
-    fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any>>>> + 's>;
+    fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>> + 's>;
 
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
@@ -322,11 +322,11 @@ impl<'future> SomeLocalExecutor<'future> for Infallible {
         }
     }
 
-    fn spawn_local_objsafe(&mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value=Box<dyn Any>>> {
+    fn spawn_local_objsafe(&mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value=Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> {
         unimplemented!()
     }
 
-    fn spawn_local_objsafe_async<'s>(&'s mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any>>>> + 's> {
+    fn spawn_local_objsafe_async<'s>(&'s mut self, _task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>> + 's> {
         unimplemented!()
     }
 

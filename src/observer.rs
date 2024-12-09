@@ -77,7 +77,7 @@ Cancellation in some_executor is optimistic.  There are three types:
 3.  The executor may support cancellation.  In this case, it may drop the future and not run it again.  This is not guaranteed.
 */
 #[must_use]
-pub trait Observer: 'static {
+pub trait Observer: 'static + Future<Output=FinishedObservation<Self::Value>>  {
     type Value;
     fn observe(&self) -> Observation<Self::Value>;
 

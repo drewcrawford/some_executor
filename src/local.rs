@@ -5,7 +5,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use crate::observer::{ExecutorNotified, TypedObserver, ObserverNotified, Observer};
+use crate::observer::{ExecutorNotified, TypedObserver, ObserverNotified, Observer, FinishedObservation};
 use crate::{SomeLocalExecutor};
 use crate::task::Task;
 
@@ -52,11 +52,11 @@ impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>> SomeL
     }
 
 
-    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value=Box<dyn Any>>> {
+    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value=Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> {
         self.executor.spawn_local_objsafe(task)
     }
 
-    fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any>>>> + 's> {
+    fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>> + 's> {
         Box::new(async {
             let objsafe_spawn_fut = self.executor.spawn_local_objsafe_async(task);
             Box::into_pin(objsafe_spawn_fut).await
@@ -124,12 +124,12 @@ impl<'a> SomeLocalExecutor<'a> for UnsafeErasedLocalExecutor {
         }
     }
 
-    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value=Box<dyn Any>>> {
+    fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value=Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> {
         let ex = self.executor();
         ex.spawn_local_objsafe(task)
     }
 
-    fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any>>>> + 's> {
+    fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>> + 's> {
         let ex = self.executor();
         ex.spawn_local_objsafe_async(task)
     }

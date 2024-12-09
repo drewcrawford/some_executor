@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
-use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
+use crate::observer::{ExecutorNotified, FinishedObservation, Observer, ObserverNotified};
 use crate::{DynExecutor, SomeExecutor};
 use crate::dyn_observer::DowncastObserver;
 use crate::task::Task;
@@ -44,11 +44,11 @@ impl<UnderlyingNotifier: ExecutorNotified + Send> SomeExecutor for Box<dyn SomeE
         }
     }
 
-    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Observer<Value=Box<dyn Any + Send>>> {
+    fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Observer<Value=Box<dyn Any + Send>, Output = FinishedObservation<Box<dyn Any + Send>>>> {
         self.as_mut().spawn_objsafe(task)
     }
 
-    fn spawn_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any + Send>>>> + 's> {
+    fn spawn_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any + Send>, Output = FinishedObservation<Box<dyn Any + Send>>>>> + 's> {
         self.as_mut().spawn_objsafe_async(task)
     }
 

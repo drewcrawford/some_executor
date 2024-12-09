@@ -1,6 +1,9 @@
 use std::any::Any;
+use std::future::Future;
 use std::marker::PhantomData;
-use crate::observer::{Observation, Observer};
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use crate::observer::{FinishedObservation, Observation, Observer};
 use crate::task::TaskID;
 
 /**
@@ -39,13 +42,35 @@ impl<O,V> DowncastObserver<O,V> {
     }
 }
 
+impl<O,V> Future for DowncastObserver<O,V>
+where O: Future<Output = FinishedObservation<Box<dyn Any + Send + 'static>>> + 'static,
+V: 'static {
+    type Output = FinishedObservation<V>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let f = unsafe{self.map_unchecked_mut(|s| &mut s.0)}.poll(cx);
+        match f {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(e) => {
+                match e {
+                    FinishedObservation::Cancelled => Poll::Ready(FinishedObservation::Cancelled),
+                    FinishedObservation::Ready(e) => {
+                        let downcasted = e.downcast::<V>().expect("Downcast failed");
+                        Poll::Ready(FinishedObservation::Ready(*downcasted))
+                    }
+                }
+            }
+        }
+
+    }
+}
 
 /**
 This implements Observer for Box<dyn type>
 
 todo: could probably be made more generic
 */
-impl<V> Observer for Box<dyn Observer<Value = V>>
+impl<V> Observer for Box<dyn Observer<Value = V, Output = FinishedObservation<V>>>
 where V: 'static {
     type Value = V;
 
@@ -55,5 +80,18 @@ where V: 'static {
 
     fn task_id(&self) -> &TaskID {
         self.as_ref().task_id()
+    }
+}
+
+impl<V> Future for Box<dyn Observer<Value = V, Output = FinishedObservation<V>>>
+where
+    V: 'static,
+{
+    type Output = FinishedObservation<V>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        //Box guarantees the inner value is pinned as long as the Box itself is pinned,
+        let map = unsafe{self.as_mut().map_unchecked_mut(|s| &mut **s)};
+        map.poll(cx)
     }
 }
