@@ -14,6 +14,7 @@ exclude = [".*","art"]
 
 [dependencies]
 priority = "0.1.1"
+atomic-waker = "1.1.2"
 
 [target.'cfg(target_arch="wasm32")'.dependencies]
 wasm-bindgen = "0.2"

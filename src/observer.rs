@@ -2,8 +2,12 @@
 
 use std::any::Any;
 use std::convert::Infallible;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::task::{Context, Poll};
+use atomic_waker::AtomicWaker;
 use crate::task::{InFlightTaskCancellation, TaskID};
 
 #[derive(Debug,PartialEq,Eq,Hash,Clone)]
@@ -26,15 +30,33 @@ pub enum Observation<T> {
     Cancelled,
 }
 
+#[derive(Debug,PartialEq,Eq,Hash,Clone)]
+pub enum FinishedObservation<T> {
+    /**
+    The task is finished.
+    */
+    Ready(T),
+    /**
+    The task was cancelled.
+    */
+    Cancelled,
+}
+
 
 #[derive(Debug)]
 struct Shared<T> {
     //for now, we implement this with a mutex
     lock: std::sync::Mutex<Observation<T>>,
     /**
+    To be notified when the task is cancelled.
+    */
+    waker: AtomicWaker,
+    /**
     Indicates the observer was dropped without detach.
     */
     observer_cancelled: AtomicBool,
+
+
     in_flight_task_cancellation: InFlightTaskCancellation,
 }
 
@@ -83,6 +105,7 @@ pub struct TypedObserver<T,ENotifier:ExecutorNotified> {
 
 
 
+
 impl<'executor, T,ENotifier: ExecutorNotified> Drop for TypedObserver< T,ENotifier> {
     fn drop(&mut self) {
         if !self.detached {
@@ -121,6 +144,7 @@ impl<T,Notifier> ObserverSender<T,Notifier> {
         match *lock {
             Observation::Pending => {
                 *lock = Observation::Ready(value);
+                self.shared.waker.wake();
             },
             Observation::Ready(_) => {
                 panic!("Observer already has a value");
@@ -146,6 +170,7 @@ impl<T,Notifier> Drop for ObserverSender<T,Notifier> {
         match *lock {
             Observation::Pending => {
                 *lock = Observation::Cancelled;
+                self.shared.waker.wake();
             },
             Observation::Ready(_) => {
                 //nothing to do
@@ -193,6 +218,30 @@ impl<T,E: ExecutorNotified> TypedObserver<T,E> {
     pub fn detach(mut self) {
         self.notifier.take();
         self.detached = true;
+    }
+}
+
+impl<T,E> Future for TypedObserver<T,E>
+where E: ExecutorNotified {
+    type Output = FinishedObservation<T>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.shared.waker.register(cx.waker());
+        let o = self.observe();
+        match o {
+            Observation::Pending => {
+                Poll::Pending
+            },
+            Observation::Ready(v) => {
+                Poll::Ready(FinishedObservation::Ready(v))
+            },
+            Observation::Done => {
+                unreachable!("Observer should not be polled after completion");
+            },
+            Observation::Cancelled => {
+                Poll::Ready(FinishedObservation::Cancelled)
+            }
+        }
     }
 }
 
@@ -271,7 +320,7 @@ impl<'executor> ExecutorNotified for Infallible {
 }
 
 pub(crate) fn observer_channel<'enotifier, R,ONotifier,ENotifier: ExecutorNotified>(observer_notify: Option<ONotifier>, executor_notify: Option<ENotifier>, task_cancellation: InFlightTaskCancellation, task_id: TaskID) -> (ObserverSender<R,ONotifier>, TypedObserver< R,ENotifier>) {
-    let shared = Arc::new(Shared { lock: std::sync::Mutex::new(Observation::Pending), observer_cancelled: AtomicBool::new(false), in_flight_task_cancellation: task_cancellation });
+    let shared = Arc::new(Shared { lock: std::sync::Mutex::new(Observation::Pending), waker: AtomicWaker::new(), observer_cancelled: AtomicBool::new(false), in_flight_task_cancellation: task_cancellation });
     (ObserverSender {shared: shared.clone(), notifier: observer_notify}, TypedObserver {shared, task_id, notifier: executor_notify, detached: false})
 }
 
