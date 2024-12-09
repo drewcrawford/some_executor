@@ -84,7 +84,7 @@ pub trait Observer: 'static + Future<Output=FinishedObservation<Self::Value>>  {
     fn task_id(&self) -> &TaskID;
 
     fn detach(self) where Self: Sized {
-        std::mem::drop(self);
+        std::mem::forget(self);
     }
 }
 
