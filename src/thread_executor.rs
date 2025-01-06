@@ -44,4 +44,12 @@ pub fn set_thread_local_executor(runtime: Box<dyn SomeLocalExecutor<'static, Exe
         *e.borrow_mut() = Some(runtime);
     });
 }
+/**
+Sets the local executor for the current thread
 
+This method wraps the executor in an adapter type that erases the underlying notifier.
+*/
+pub fn set_thread_local_executor_adapting_notifier<E: SomeLocalExecutor<'static> + 'static>(runtime: E) {
+    let adapter = crate::local::OwnedSomeLocalExecutorErasingNotifier::new(runtime);
+    set_thread_local_executor(Box::new(adapter));
+}

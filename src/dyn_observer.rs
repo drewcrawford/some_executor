@@ -1,3 +1,5 @@
+//SPDX-License-Identifier: MIT OR Apache-2.0
+
 use std::any::Any;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -66,7 +68,7 @@ V: 'static {
 }
 
 /**
-This implements Observer for Box<dyn type>
+This implements Observer for `Box<dyn type>`
 
 todo: could probably be made more generic
 */

@@ -1,3 +1,5 @@
+//SPDX-License-Identifier: MIT OR Apache-2.0
+
 use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
@@ -5,10 +7,6 @@ use crate::observer::{ExecutorNotified, FinishedObservation, Observer, ObserverN
 use crate::{DynExecutor, SomeExecutor};
 use crate::dyn_observer::DowncastObserver;
 use crate::task::Task;
-
-
-
-
 
 impl<UnderlyingNotifier: ExecutorNotified + Send> SomeExecutor for Box<dyn SomeExecutor<ExecutorNotifier = UnderlyingNotifier>> {
     type ExecutorNotifier = Box<dyn ExecutorNotified + Send>;

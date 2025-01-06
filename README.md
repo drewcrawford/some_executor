@@ -16,6 +16,8 @@ can take an executor as a generic argument, giving the compiler the opportunity 
 Or, you can spawn a task onto a global executor via dynamic dispatch.  You can provide rich scheduling information that
 can be used by the executor to prioritize tasks. You can do all this in a modular and futureproof way.
 
+Oh, and we built an executor into the crate.  It's not the greatest, but it is a baseline that's always available.
+
 **If you want to implement an executor**, this crate provides a simple, obvious trait to receive futures
 and execute them, and plug into the ecosystem.  Moreover, advanced features like cancellation are
 implemented for you, so you get them for free and can focus on the core logic of your executor.
@@ -87,3 +89,7 @@ to use both projects together.
 # Development status
 
 This interface is unstable and may change.
+
+# wasm32 support
+
+This crate has full support for wasm32-unknown-unknown.

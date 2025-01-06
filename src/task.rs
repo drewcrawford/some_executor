@@ -626,6 +626,9 @@ impl<F, ONotifier, E> Future for SpawnedTask<F, ONotifier, E>
     }
 
     impl Task<Pin<Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>> {
+        /**
+        Creates a new objsafe future
+*/
         pub fn new_objsafe(label: String, future: Box<dyn Future<Output=Box<dyn Any + Send + 'static>> + Send + 'static>, configuration: Configuration, notifier: Option<Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Self {
             Self::with_notifications(label, Box::into_pin(future), configuration, notifier)
         }

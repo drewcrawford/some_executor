@@ -17,6 +17,8 @@ can take an executor as a generic argument, giving the compiler the opportunity 
 Or, you can spawn a task onto a global executor via dynamic dispatch.  You can provide rich scheduling information that
 can be used by the executor to prioritize tasks. You can do all this in a modular and futureproof way.
 
+Oh, and we built an executor into the crate.  It's not the greatest, but it is a baseline that's always available.
+
 **If you want to implement an executor**, this crate provides a simple, obvious trait to receive futures
 and execute them, and plug into the ecosystem.  Moreover, advanced features like cancellation are
 implemented for you, so you get them for free and can focus on the core logic of your executor.
@@ -88,6 +90,10 @@ to use both projects together.
 # Development status
 
 This interface is unstable and may change.
+
+# wasm32 support
+
+This crate has full support for wasm32-unknown-unknown.
 */
 
 pub mod task;
@@ -102,10 +108,13 @@ mod sys;
 mod dyn_executor;
 mod dyn_observer_notified;
 mod dyn_observer;
+mod last_resort;
 
 pub use sys::Instant as Instant;
 
 pub type Priority = priority::Priority;
+
+
 
 use std::any::Any;
 use std::convert::Infallible;
@@ -205,6 +214,7 @@ pub trait SomeExecutor: Send + Sync {
     Produces an executor notifier.
     */
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
+
 }
 
 /**
@@ -216,6 +226,66 @@ pub trait SomeExecutorExt: SomeExecutor + Clone {}
 
 /**
 A trait for executors that can spawn tasks onto the local thread.
+
+This type can spawn futures that are `!Send`.
+
+# About the lifetime parameter
+
+The lifetime parameter defines the lifetime of the executor itself, which is really the longest lifetime of any future it may be executing.
+
+To understand this, it is helpful to consider 3 cases.
+
+## Multithreaded executors
+
+Multithreaded executors along the lines of [SomeExecutor] generally require their futures to be `'static`.
+This is vaguely intuitive in the "it is nice to be able to move the future to another thread" sense,
+but in full detail it is less intuitive than it seems.
+If a future refers to data on the local stack frame, then the future may dangle if:
+
+1.  The user returns upstack before the future completes, this could maybe be resolved with clever lifetimes?
+2.  The thread panics before the future completes, this is a hard problem.
+3.  The "thread" is really an async context, which is cancelled before the future completes, this is a hard problem.
+4.  The thread is terminated by the OS for some reason, this is a hard problem.
+
+For at least reasons 2-4, [SomeExecutor] implicitly requires `'static` futures.
+
+## Local executors, globally-scoped
+
+Now let us consider a local executor with global scope (such as a main thread executor).  These executors
+disptach onto the local thread but exist for a long time, such as the lifetime of the program.  These
+types of executors have requirements not so dissimilar from multithreaded executors:
+
+1.  The user returns upstack before the future completes.  This is probably fine, if we poison the
+    executor in some way (includingstatically), although care must be taken to ensure that the future's memory does not escape.
+    For example, in a DMA-type operation where the OS is writing to a buffer independently,
+    that buffer must not be located on the stack.
+2.  If the thread panics before the future completes, that's probably fine as well since the executor
+    is inherently poisoned by the panic.  See the DMA-style caveat above.
+3.  If the async context is cancelled before the future completes, that's a big problem.  It is a hard one
+    to solve because it's not obvious how to poison the executor deterministically.
+4.  If the thread is terminated by the OS, the executor is poisoned so that's ok.
+
+Due to reason 3, local executors with global scope generally require `'static` futures.
+
+## Local executors, locally scoped
+
+Alternatively we may spin up an executor e.g. on a stack frame, for a specific task.  In that case:
+
+1.  Returning upstack inherently poisons the executor, with sensible lifetime design/analysis.
+2.  Panicking poisons the executor.
+3.  Cancellation posions the executor since the executor is on the same stackframe
+4.  The thread is terminated by the OS, the executor is poisoned.
+
+In this case, the executor can support non-`'static` futures.
+
+## Overall
+
+In summary, for executors with global scope, `'static' should be chosen as the lifetime parameter.
+
+For executors with local scope, this trait can be implemented for any lifetime.
+
+When in doubt, the `'static` lifetime can be chosen and upgraded later.
+
 */
 pub trait SomeLocalExecutor<'future> {
     type ExecutorNotifier: ExecutorNotified;
@@ -244,7 +314,7 @@ pub trait SomeLocalExecutor<'future> {
     where
         Self: Sized,
         F: 'future,
-        <F as Future>::Output: 'static;
+        <F as Future>::Output: 'static + Unpin;
 
     /**
     Spawns a future onto the runtime.
@@ -259,6 +329,7 @@ pub trait SomeLocalExecutor<'future> {
 
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
+
 }
 
 /**

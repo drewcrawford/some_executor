@@ -22,14 +22,21 @@ Accesses the current executor.
 
 # Implementation
 
+1.  If the current task has an executor, it is returned.
+2.  If the current thread has an executor, it is returned.
+3.  If the global executor is set, it is returned.
+4.  Otherwise, a last resort executor is returned.
 
 */
-pub fn current_executor() -> Option<Box<DynExecutor>> {
+pub fn current_executor() -> Box<DynExecutor> {
     if let Some(executor) = current_task_executor() {
-        Some(executor)
+        executor
     } else if let Some(executor ) = crate::thread_executor::thread_executor(|e| e.map(|e| e.clone_box())) {
-        Some(executor)
-    } else {
-        crate::global_executor::global_executor(|e| e.map(|e| e.clone_box()))
+        executor
+    } else if let Some(executor) = crate::global_executor::global_executor(|e| e.map(|e| e.clone_box())) {
+        executor
+    }
+    else {
+        Box::new(crate::last_resort::LastResortExecutor::new())
     }
 }
