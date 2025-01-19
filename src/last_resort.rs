@@ -16,7 +16,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::pin::{pin, Pin};
 use std::sync::{Arc, Condvar, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::task::{Context, Poll, RawWaker, RawWakerVTable};
 use crate::observer::{FinishedObservation, Observer, ObserverNotified};
 use crate::{DynExecutor, SomeExecutor};
@@ -36,12 +36,16 @@ impl LastResortExecutor {
     }
 }
 
+const SLEEPING: u8 = 0;
+const LISTENING: u8 = 1;
+const WAKEPLS: u8 = 2;
+
+
 struct Shared {
     condvar: Condvar,
     mutex: Mutex<bool>,
-    //have to be careful about deadlocks here, so if we're woken from the same thread as polling, use a lock-free strategy
-    inline_notify: AtomicBool,
-    inline_notify_thread: thread::ThreadId,
+    //have to be careful about deadlocks here,
+    inline_notify: AtomicU8,
 }
 struct Waker {
     shared: Arc<Shared>,
@@ -57,22 +61,16 @@ const WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
     },
     |data| {
         let waker = unsafe{Arc::from_raw(data as *const Waker)};
-        if waker.shared.inline_notify_thread == thread::current().id() {
-            waker.shared.inline_notify.store(true, Ordering::Relaxed);
-        }
-        else {
-            *waker.shared.mutex.lock().expect("mutex") = true;
+        let old = waker.shared.inline_notify.swap(WAKEPLS, Ordering::Relaxed);
+        if old == SLEEPING {
             waker.shared.condvar.notify_one();
         }
         drop(waker);
     },
     |data| {
         let waker = unsafe{Arc::from_raw(data as *const Waker)};
-        if waker.shared.inline_notify_thread == thread::current().id() {
-            waker.shared.inline_notify.store(true, Ordering::Relaxed);
-        }
-        else {
-            *waker.shared.mutex.lock().expect("mutex") = true;
+        let old = waker.shared.inline_notify.swap(WAKEPLS, Ordering::Relaxed);
+        if old == SLEEPING {
             waker.shared.condvar.notify_one();
         }
         std::mem::forget(waker);
@@ -105,8 +103,7 @@ impl LastResortExecutor {
             let shared = Arc::new(Shared {
                 condvar: Condvar::new(),
                 mutex: Mutex::new(false),
-                inline_notify: AtomicBool::new(false),
-                inline_notify_thread: thread::current().id(),
+                inline_notify: AtomicU8::new(SLEEPING),
             });
             let waker = Waker{shared: shared.clone()}.into_core_waker();
             let mut c = Context::from_waker(&waker);
@@ -114,21 +111,22 @@ impl LastResortExecutor {
             loop {
                 let mut _guard = shared.mutex.lock().expect("Mutex poisoned");
                 //eagerly poll
-
-                shared.inline_notify.store(false, Ordering::Relaxed);
+                shared.inline_notify.store(LISTENING, Ordering::Relaxed);
                 let r = pin.as_mut().poll(&mut c);
                 match r {
                     Poll::Ready(..) => {
                         return;
                     }
                     Poll::Pending => {
-
-                        //wait while false
-                        if shared.inline_notify.load(Ordering::Relaxed) {
+                        let old = shared.inline_notify.swap(SLEEPING, Ordering::Relaxed);
+                        if old == WAKEPLS {
+                            //release lock anyway
+                            drop(_guard);
                             continue; //poll eagerly
                         }
                         else {
-                            _guard = shared.condvar.wait_while(_guard, |guard| !*guard).expect("Condvar poisoned");
+                            println!("NOT inline");
+                            _guard = shared.condvar.wait_while(_guard, |guard| shared.inline_notify.load(Ordering::Relaxed) != WAKEPLS).expect("Condvar poisoned");
                         }
                     }
                 }
