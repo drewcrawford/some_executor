@@ -16,7 +16,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::pin::{pin, Pin};
 use std::sync::{Arc, Condvar, Mutex};
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::task::{Context, Poll, RawWaker, RawWakerVTable};
 use crate::observer::{FinishedObservation, Observer, ObserverNotified};
 use crate::{DynExecutor, SomeExecutor};
@@ -125,8 +125,7 @@ impl LastResortExecutor {
                             continue; //poll eagerly
                         }
                         else {
-                            println!("NOT inline");
-                            _guard = shared.condvar.wait_while(_guard, |guard| shared.inline_notify.load(Ordering::Relaxed) != WAKEPLS).expect("Condvar poisoned");
+                            _guard = shared.condvar.wait_while(_guard, |_| shared.inline_notify.load(Ordering::Relaxed) != WAKEPLS).expect("Condvar poisoned");
                         }
                     }
                 }
