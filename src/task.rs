@@ -230,12 +230,12 @@ static TASK_IDS: AtomicU64 = AtomicU64::new(0);
 ///
 /// let task = Task::with_notifications(
 ///     "process-request".to_string(),
+///     Configuration::default(),
+///     Some(notifier),
 ///     async {
 ///         // Process and return result
 ///         "processed".to_string()
-///     },
-///     Configuration::default(),
-///     Some(notifier)
+///     }
 /// );
 /// ```
 #[derive(Debug)]
@@ -540,15 +540,15 @@ impl<F: Future, N> Task<F, N> {
 
     # Parameters
     - `label`: A human-readable label for the task.
-    - `future`: The future to run.
     - `configuration`: Configuration for the task.
     - `notifier`: An observer to notify when the task completes.  If there is no notifier, consider using [Self::without_notifications] instead.
+    - `future`: The future to run.
     */
     pub fn with_notifications(
         label: String,
-        future: F,
         configuration: Configuration,
         notifier: Option<N>,
+        future: F,
     ) -> Self
     where
         F: Future,
@@ -952,7 +952,7 @@ impl<F: Future> Task<F, Infallible> {
     This function avoids the need to specify the type parameter to [Task].
     */
     pub fn without_notifications(label: String, future: F, configuration: Configuration) -> Self {
-        Task::with_notifications(label, future, configuration, None)
+        Task::with_notifications(label, configuration, None, future)
     }
 }
 
@@ -1187,7 +1187,7 @@ impl
         configuration: Configuration,
         notifier: Option<Box<dyn ObserverNotified<dyn Any + Send> + Send>>,
     ) -> Self {
-        Self::with_notifications(label, Box::into_pin(future), configuration, notifier)
+        Self::with_notifications(label, configuration, notifier, Box::into_pin(future))
     }
 }
 
@@ -1659,9 +1659,9 @@ impl Default for Task<DefaultFuture, Infallible> {
     fn default() -> Self {
         Task::with_notifications(
             "".to_string(),
-            DefaultFuture,
             Configuration::default(),
             None,
+            DefaultFuture,
         )
     }
 }
@@ -1696,7 +1696,7 @@ Support from for the Future type
 
 impl<F: Future, N> From<F> for Task<F, N> {
     fn from(future: F) -> Self {
-        Task::with_notifications("".to_string(), future, Configuration::default(), None)
+        Task::with_notifications("".to_string(), Configuration::default(), None,future)
     }
 }
 
@@ -1851,7 +1851,7 @@ mod tests {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_create_task() {
         let task: Task<_, Infallible> =
-            Task::with_notifications("test".to_string(), async {}, Default::default(), None);
+            Task::with_notifications("test".to_string(), Default::default(), None,async {});
         assert_eq!(task.label(), "test");
     }
 
