@@ -105,10 +105,13 @@ use std::task::{Context, Poll};
 // Type aliases for complex types to satisfy clippy::type_complexity warnings
 
 /// Type alias for a thread-local executor that can handle local tasks
-type ThreadLocalExecutor = RefCell<Option<Box<dyn SomeLocalExecutor<'static, ExecutorNotifier=Box<dyn ExecutorNotified>>>>>;
+type ThreadLocalExecutor = RefCell<
+    Option<Box<dyn SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn ExecutorNotified>>>>,
+>;
 
 /// Type alias for a boxed future that outputs boxed Any and is Send + 'static
-type BoxedSendFuture = Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>;
+type BoxedSendFuture =
+    Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>;
 
 /// Type alias for a boxed observer notifier that handles Send Any values
 type BoxedSendObserverNotifier = Box<dyn ObserverNotified<dyn Any + Send> + Send>;
@@ -952,9 +955,7 @@ impl<F: Future, N> Task<F, N> {
     /**
     Converts this task into one suitable for spawn_objsafe
     */
-    pub fn into_objsafe(
-        self,
-    ) -> ObjSafeTask
+    pub fn into_objsafe(self) -> ObjSafeTask
     where
         N: ObserverNotified<F::Output> + Send,
         F::Output: Send + 'static + Unpin,
@@ -1022,14 +1023,16 @@ where
     unsafe {
         TASK_LABEL.with_mut(|l| {
             *l = Some(
-                state.label
+                state
+                    .label
                     .take()
                     .expect("Label not set (is task being polled already?)"),
             );
         });
         IS_CANCELLED.with_mut(|c| {
             *c = Some(
-                state.cancellation
+                state
+                    .cancellation
                     .take()
                     .expect("Cancellation not set (is task being polled already?)"),
             );
@@ -1141,13 +1144,7 @@ where
             cancellation: cancellation.get_mut(),
             executor: executor.get_mut(),
         };
-        common_poll(
-            future,
-            state,
-            local_executor,
-            metadata,
-            cx,
-        )
+        common_poll(future, state, local_executor, metadata, cx)
     }
 }
 
@@ -1211,13 +1208,7 @@ where
             cancellation: cancellation.get_mut(),
             executor: &mut some_executor,
         };
-        common_poll(
-            future,
-            state,
-            Some(executor),
-            metadata,
-            cx,
-        )
+        common_poll(future, state, Some(executor), metadata, cx)
     }
 }
 

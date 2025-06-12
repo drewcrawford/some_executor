@@ -129,7 +129,8 @@ use std::pin::Pin;
 // Type aliases for complex types to satisfy clippy::type_complexity warnings
 
 /// Type alias for a boxed future that outputs boxed Any and is Send + 'static
-type BoxedSendFuture = Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>;
+type BoxedSendFuture =
+    Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>;
 
 /// Type alias for a boxed observer notifier that handles Send Any values
 type BoxedSendObserverNotifier = Box<dyn ObserverNotified<dyn Any + Send> + Send>;
@@ -138,7 +139,10 @@ type BoxedSendObserverNotifier = Box<dyn ObserverNotified<dyn Any + Send> + Send
 type ObjSafeTask = Task<BoxedSendFuture, BoxedSendObserverNotifier>;
 
 /// Type alias for a boxed observer that handles Send Any values
-type BoxedSendObserver = Box<dyn Observer<Value = Box<dyn Any + Send>, Output = FinishedObservation<Box<dyn Any + Send>>> + Send>;
+type BoxedSendObserver = Box<
+    dyn Observer<Value = Box<dyn Any + Send>, Output = FinishedObservation<Box<dyn Any + Send>>>
+        + Send,
+>;
 
 /// Type alias for a future that returns a boxed observer for Send Any values
 type BoxedSendObserverFuture<'s> = Box<dyn Future<Output = BoxedSendObserver> + 's>;
@@ -153,7 +157,8 @@ type BoxedLocalObserverNotifier = Box<dyn ObserverNotified<(dyn Any + 'static)>>
 type ObjSafeLocalTask = Task<BoxedLocalFuture, BoxedLocalObserverNotifier>;
 
 /// Type alias for a boxed observer that handles Any values (non-Send)
-type BoxedLocalObserver = Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>;
+type BoxedLocalObserver =
+    Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>;
 
 /// Type alias for a future that returns a boxed observer for local Any values
 type BoxedLocalObserverFuture<'s> = Box<dyn Future<Output = BoxedLocalObserver> + 's>;
@@ -231,10 +236,7 @@ pub trait SomeExecutor: Send + Sync {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_objsafe(
-        &mut self,
-        task: ObjSafeTask,
-    ) -> BoxedSendObserver;
+    fn spawn_objsafe(&mut self, task: ObjSafeTask) -> BoxedSendObserver;
 
     /**
     Spawns a future onto the runtime.
@@ -243,10 +245,7 @@ pub trait SomeExecutor: Send + Sync {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_objsafe_async<'s>(
-        &'s mut self,
-        task: ObjSafeTask,
-    ) -> BoxedSendObserverFuture<'s>;
+    fn spawn_objsafe_async<'s>(&'s mut self, task: ObjSafeTask) -> BoxedSendObserverFuture<'s>;
 
     /**
     Clones the executor.
@@ -372,10 +371,7 @@ pub trait SomeLocalExecutor<'future> {
 
     This differs from [SomeExecutor::spawn] in that we take a boxed future, since we can't have generic fn.  Implementations probably pin this with [Box::into_pin].
     */
-    fn spawn_local_objsafe(
-        &mut self,
-        task: ObjSafeLocalTask,
-    ) -> BoxedLocalObserver;
+    fn spawn_local_objsafe(&mut self, task: ObjSafeLocalTask) -> BoxedLocalObserver;
 
     fn spawn_local_objsafe_async<'s>(
         &'s mut self,

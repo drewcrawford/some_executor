@@ -87,7 +87,9 @@ use std::cell::RefCell;
 // Type alias for complex types to satisfy clippy::type_complexity warnings
 
 /// Type alias for a thread-local executor that can handle local tasks
-type ThreadLocalExecutor = RefCell<Option<Box<dyn SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn ExecutorNotified>>>>>;
+type ThreadLocalExecutor = RefCell<
+    Option<Box<dyn SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn ExecutorNotified>>>>,
+>;
 
 thread_local! {
     static THREAD_EXECUTOR: RefCell<Option<Box<DynExecutor>>> = RefCell::new(None);
