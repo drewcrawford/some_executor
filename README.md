@@ -23,7 +23,7 @@ and execute them, and plug into the ecosystem.  Moreover, advanced features like
 implemented for you, so you get them for free and can focus on the core logic of your executor.
 
 **If you want to write async code**, this crate provides a **standard, robust featureset** that (in my opinion) is
-table-stakes for writing async rust in 2024. This includes cancellation, task locals, priorities, and much more.
+ table-stakes for writing async rust in 2024. This includes cancellation, task locals, priorities, and much more.
 These features are portable and dependable across any executor.
 
 Here are deeper dives on each topic.
@@ -39,7 +39,7 @@ some_executor provides many different API options for many usecases.
 4.  You can spawn onto the "current" executor, at task level `current_executor` or thread level `thread_executor`.  This is useful in case you don't want to take an executor as an argument, but your caller probably has one, and you can borrow that.
 5.  You can spawn onto a program-wide `global_executor`.  This is useful in case you don't want to take it as an argument, you aren't sure what your caller is doing (for example you might be handling a signal), and you nonetheless want to spawn a task.
 
-Spawning a task is as simple as calling `spawn` on any of the executor types.  Then you get an `Observer` object that you can use to get the results of the task, if interested, or cancel the task.
+Spawning a task is as simple as calling `spawn` on any of the executor types.  Then you get an `TypedObserver` object that you can use to get the results of the task, if interested, or cancel the task.
 
 ## Reference executors:
 
