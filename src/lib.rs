@@ -129,39 +129,39 @@ use std::pin::Pin;
 // Type aliases for complex types to satisfy clippy::type_complexity warnings
 
 /// Type alias for a boxed future that outputs boxed Any and is Send + 'static
-type BoxedSendFuture =
+pub type BoxedSendFuture =
     Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>;
 
 /// Type alias for a boxed observer notifier that handles Send Any values
-type BoxedSendObserverNotifier = Box<dyn ObserverNotified<dyn Any + Send> + Send>;
+pub type BoxedSendObserverNotifier = Box<dyn ObserverNotified<dyn Any + Send> + Send>;
 
 /// Type alias for a Task that can be used with object-safe spawning
-type ObjSafeTask = Task<BoxedSendFuture, BoxedSendObserverNotifier>;
+pub type ObjSafeTask = Task<BoxedSendFuture, BoxedSendObserverNotifier>;
 
 /// Type alias for a boxed observer that handles Send Any values
-type BoxedSendObserver = Box<
+pub type BoxedSendObserver = Box<
     dyn Observer<Value = Box<dyn Any + Send>, Output = FinishedObservation<Box<dyn Any + Send>>>
         + Send,
 >;
 
 /// Type alias for a future that returns a boxed observer for Send Any values
-type BoxedSendObserverFuture<'s> = Box<dyn Future<Output = BoxedSendObserver> + 's>;
+pub type BoxedSendObserverFuture<'s> = Box<dyn Future<Output = BoxedSendObserver> + 's>;
 
 /// Type alias for a boxed future that outputs boxed Any (non-Send)
-type BoxedLocalFuture = Pin<Box<dyn Future<Output = Box<dyn Any>>>>;
+pub type BoxedLocalFuture = Pin<Box<dyn Future<Output = Box<dyn Any>>>>;
 
 /// Type alias for a boxed observer notifier that handles Any values (non-Send)
-type BoxedLocalObserverNotifier = Box<dyn ObserverNotified<(dyn Any + 'static)>>;
+pub type BoxedLocalObserverNotifier = Box<dyn ObserverNotified<(dyn Any + 'static)>>;
 
 /// Type alias for a Task that can be used with local object-safe spawning
-type ObjSafeLocalTask = Task<BoxedLocalFuture, BoxedLocalObserverNotifier>;
+pub type ObjSafeLocalTask = Task<BoxedLocalFuture, BoxedLocalObserverNotifier>;
 
 /// Type alias for a boxed observer that handles Any values (non-Send)
-type BoxedLocalObserver =
+pub type BoxedLocalObserver =
     Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>;
 
-/// Type alias for a future that returns a boxed observer for local Any values
-type BoxedLocalObserverFuture<'s> = Box<dyn Future<Output = BoxedLocalObserver> + 's>;
+/// Type alias for a future that returns a boxed observer for local Any values 
+pub type BoxedLocalObserverFuture<'s> = Box<dyn Future<Output = BoxedLocalObserver> + 's>;
 
 /*
 Design notes.
