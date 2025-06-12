@@ -92,7 +92,7 @@ fn current_task_executor() -> Option<Box<DynExecutor>> {
 /// use some_executor::SomeExecutor;
 /// use some_executor::task::{Task, Configuration};
 /// use crate::some_executor::observer::Observer;
-/// 
+///
 /// # async fn spawn_many_tasks() {
 /// // Good: Store the executor
 /// let mut executor = current_executor();
