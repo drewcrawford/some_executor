@@ -6,8 +6,8 @@ use std::any::Any;
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::task::{Context, Poll};
 
 /// Represents the state of an observed task.
@@ -39,7 +39,7 @@ pub enum Observation<T> {
     /// The task is still running and has not completed.
     Pending,
     /// The task has completed with a value.
-    /// 
+    ///
     /// This value can only be observed once. After the value is taken,
     /// subsequent observations will return [`Observation::Done`].
     Ready(T),
@@ -112,15 +112,15 @@ struct Shared<T> {
 ///
 /// # Cancellation
 ///
-/// Dropping an observer requests cancellation of the associated task. Cancellation in 
+/// Dropping an observer requests cancellation of the associated task. Cancellation in
 /// some_executor is optimistic and operates at three levels:
 ///
-/// 1. **Lightweight cancellation**: some_executor guarantees that polls occurring logically 
+/// 1. **Lightweight cancellation**: some_executor guarantees that polls occurring logically
 ///    after cancellation will not be run. This is free and universal.
-/// 2. **In-flight cancellation**: If the task is currently being polled, cancellation depends 
+/// 2. **In-flight cancellation**: If the task is currently being polled, cancellation depends
 ///    on how the task itself reacts to cancellation through the `IS_CANCELLED` task local.
 ///    Task support for this is sporadic and not guaranteed.
-/// 3. **Executor cancellation**: The executor may support cancellation by dropping the future 
+/// 3. **Executor cancellation**: The executor may support cancellation by dropping the future
 ///    and not running it again. This is not guaranteed and depends on the executor implementation.
 ///
 /// To allow a task to continue running without the observer, use [`detach`](Self::detach).
@@ -156,7 +156,7 @@ struct Shared<T> {
 pub trait Observer: 'static + Future<Output = FinishedObservation<Self::Value>> {
     /// The type of value produced by the observed task.
     type Value;
-    
+
     /// Checks the current state of the task without blocking.
     ///
     /// This method allows you to inspect the task's progress without waiting.
@@ -183,7 +183,7 @@ pub trait Observer: 'static + Future<Output = FinishedObservation<Self::Value>> 
 /// A concrete implementation of [`Observer`] for tasks that return a specific type.
 ///
 /// `TypedObserver` is the primary way to observe tasks spawned on executors. It provides
-/// both synchronous observation through [`observe`](Self::observe) and asynchronous 
+/// both synchronous observation through [`observe`](Self::observe) and asynchronous
 /// completion through its [`Future`] implementation.
 ///
 /// The `ENotifier` type parameter allows executors to receive notifications about
@@ -486,7 +486,7 @@ pub trait ObserverNotified<T: ?Sized>: Unpin + 'static {
 ///
 /// // Define an executor that doesn't use notifications
 /// struct MyExecutor;
-/// 
+///
 /// impl SomeExecutor for MyExecutor {
 ///     type ExecutorNotifier = Infallible;
 ///     

@@ -63,11 +63,11 @@ fn current_task_executor() -> Option<Box<DynExecutor>> {
 /// use some_executor::SomeExecutor;
 /// use some_executor::task::{Task, Configuration};
 /// use crate::some_executor::observer::Observer;
-/// 
+///
 /// # async fn example() {
 /// // Get the current executor
 /// let mut executor = current_executor();
-/// 
+///
 /// // Use it to spawn a task
 /// let task = Task::without_notifications(
 ///     "example task".to_string(),
@@ -76,7 +76,7 @@ fn current_task_executor() -> Option<Box<DynExecutor>> {
 ///         println!("Hello from spawned task");
 ///     },
 /// );
-/// 
+///
 /// let _observer = executor.spawn(task).detach();
 /// # }
 /// ```
@@ -106,7 +106,7 @@ fn current_task_executor() -> Option<Box<DynExecutor>> {
 ///     );
 ///     executor.spawn(task);
 /// }
-/// 
+///
 /// // Less efficient: Repeated discovery
 /// for i in 0..100 {
 ///     let mut executor = current_executor(); // Performs discovery each time

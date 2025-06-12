@@ -17,7 +17,7 @@ use crate::{DynExecutor, SomeExecutor};
 use std::any::Any;
 use std::convert::Infallible;
 use std::future::Future;
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::task::{Context, Poll, RawWaker, RawWakerVTable};
@@ -89,7 +89,9 @@ impl LastResortExecutor {
     fn spawn<F: Future + Send + 'static>(f: F) {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            eprintln!("some_executor::LastResortExecutor is in use.  This is not intended for production code; investigate ways to use a production-quality executor.");
+            eprintln!(
+                "some_executor::LastResortExecutor is in use.  This is not intended for production code; investigate ways to use a production-quality executor."
+            );
         }
         #[cfg(target_arch = "wasm32")]
         {

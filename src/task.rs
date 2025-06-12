@@ -36,7 +36,7 @@
 //! let task = Task::without_notifications(
 //!     "my-task".to_string(),
 //!     Configuration::default(),
-//!     async { 
+//!     async {
 //!         println!("Hello from task!");
 //!         42
 //!     },
@@ -44,7 +44,7 @@
 //!
 //! let mut executor = current_executor();
 //! let observer = executor.spawn(task).detach();
-//! 
+//!
 //! // Task runs asynchronously
 //! # }
 //! ```
@@ -88,9 +88,9 @@ use crate::dyn_observer_notified::ObserverNotifiedErased;
 use crate::hint::Hint;
 use crate::local::UnsafeErasedLocalExecutor;
 use crate::observer::{
-    observer_channel, ExecutorNotified, ObserverNotified, ObserverSender, TypedObserver,
+    ExecutorNotified, ObserverNotified, ObserverSender, TypedObserver, observer_channel,
 };
-use crate::{task_local, DynExecutor, Priority, SomeExecutor, SomeLocalExecutor};
+use crate::{DynExecutor, Priority, SomeExecutor, SomeLocalExecutor, task_local};
 use std::any::Any;
 use std::cell::RefCell;
 use std::convert::Infallible;
@@ -98,8 +98,8 @@ use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::task::{Context, Poll};
 
 /// A unique identifier for a task.
@@ -123,7 +123,7 @@ use std::task::{Context, Poll};
 /// );
 ///
 /// let id = task.task_id();
-/// 
+///
 /// // Task IDs can be converted to/from u64 for serialization
 /// let id_value = id.to_u64();
 /// let restored_id = TaskID::from_u64(id_value);
@@ -657,7 +657,7 @@ impl<F: Future, N> Task<F, N> {
     /// # struct MyExecutor;
     /// # impl SomeExecutor for MyExecutor {
     /// #     type ExecutorNotifier = std::convert::Infallible;
-    /// #     fn spawn<F, N>(&mut self, task: Task<F, N>) -> impl some_executor::observer::Observer<Value = F::Output> 
+    /// #     fn spawn<F, N>(&mut self, task: Task<F, N>) -> impl some_executor::observer::Observer<Value = F::Output>
     /// #     where F: std::future::Future + Send + 'static, N: some_executor::observer::ObserverNotified<F::Output> + Send + 'static, F::Output: Send + 'static
     /// #     { todo!() as TypedObserver::<F::Output, Infallible> }
     /// #     fn spawn_async<F, N>(&mut self, task: Task<F, N>) -> impl std::future::Future<Output = impl some_executor::observer::Observer<Value = F::Output>>
@@ -751,14 +751,14 @@ impl<F: Future, N> Task<F, N> {
     /// # use std::pin::Pin;
     /// # use std::future::Future;
     /// # use std::convert::Infallible;
-    /// 
+    ///
     /// # struct MyLocalExecutor;
     /// # impl<'a> SomeLocalExecutor<'a> for MyLocalExecutor {
     /// #     type ExecutorNotifier = Infallible;
-    /// #     fn spawn_local<F: Future, N: ObserverNotified<F::Output>>(&mut self, task: some_executor::task::Task<F, N>) -> impl Observer<Value = F::Output> where F: 'a, F::Output: 'static { 
+    /// #     fn spawn_local<F: Future, N: ObserverNotified<F::Output>>(&mut self, task: some_executor::task::Task<F, N>) -> impl Observer<Value = F::Output> where F: 'a, F::Output: 'static {
     /// #         todo!() as TypedObserver::<F::Output, Infallible>
     /// #     }
-    /// #     fn spawn_local_async<F: Future, N: ObserverNotified<F::Output>>(&mut self, task: some_executor::task::Task<F, N>) -> impl Future<Output = impl Observer<Value = F::Output>> where F: 'a, F::Output: 'static { 
+    /// #     fn spawn_local_async<F: Future, N: ObserverNotified<F::Output>>(&mut self, task: some_executor::task::Task<F, N>) -> impl Future<Output = impl Observer<Value = F::Output>> where F: 'a, F::Output: 'static {
     /// #         async { todo!() as TypedObserver::<F::Output, Infallible> }
     /// #     }
     /// #     fn spawn_local_objsafe(&mut self, task: some_executor::task::Task<Pin<Box<dyn Future<Output = Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> { todo!() }
@@ -770,7 +770,7 @@ impl<F: Future, N> Task<F, N> {
     /// let task = Task::without_notifications(
     ///     "local-work".to_string(),
     ///     Configuration::default(),
-    ///     async { 
+    ///     async {
     ///         // Can access thread-local data here
     ///         println!("Running on the local thread");
     ///     },
@@ -952,7 +952,7 @@ impl<F: Future> Task<F, Infallible> {
 
     This function avoids the need to specify the type parameter to [Task].
     */
-    pub fn without_notifications(label: String, configuration: Configuration,future: F) -> Self {
+    pub fn without_notifications(label: String, configuration: Configuration, future: F) -> Self {
         Task::with_notifications(label, configuration, None, future)
     }
 }
@@ -1435,10 +1435,10 @@ pub trait DynLocalSpawnedTask<Executor> {
         executor: &'executor mut Executor,
         some_executor: Option<Box<(dyn SomeExecutor<ExecutorNotifier = Infallible> + 'static)>>,
     ) -> std::task::Poll<()>;
-    
+
     /// Returns the earliest time this task should be polled.
     fn poll_after(&self) -> crate::sys::Instant;
-    
+
     /// Returns the task's label.
     fn label(&self) -> &str;
 
@@ -1447,7 +1447,7 @@ pub trait DynLocalSpawnedTask<Executor> {
 
     /// Returns the task's execution hint.
     fn hint(&self) -> Hint;
-    
+
     /// Returns the task's priority.
     fn priority(&self) -> priority::Priority;
 }
@@ -1535,7 +1535,7 @@ pub trait DynSpawnedTask<LocalExecutorType>: Send + Debug {
 
     /// Returns the earliest time this task should be polled.
     fn poll_after(&self) -> crate::sys::Instant;
-    
+
     /// Returns the task's label.
     fn label(&self) -> &str;
 
@@ -1544,7 +1544,7 @@ pub trait DynSpawnedTask<LocalExecutorType>: Send + Debug {
 
     /// Returns the task's execution hint.
     fn hint(&self) -> Hint;
-    
+
     /// Returns the task's priority.
     fn priority(&self) -> priority::Priority;
 }
@@ -1697,7 +1697,7 @@ Support from for the Future type
 
 impl<F: Future, N> From<F> for Task<F, N> {
     fn from(future: F) -> Self {
-        Task::with_notifications("".to_string(), Configuration::default(), None,future)
+        Task::with_notifications("".to_string(), Configuration::default(), None, future)
     }
 }
 
@@ -1842,7 +1842,7 @@ where
 mod tests {
     use crate::observer::{FinishedObservation, Observer, ObserverNotified};
     use crate::task::{DynLocalSpawnedTask, DynSpawnedTask, SpawnedTask, Task};
-    use crate::{task_local, SomeExecutor, SomeLocalExecutor};
+    use crate::{SomeExecutor, SomeLocalExecutor, task_local};
     use std::any::Any;
     use std::convert::Infallible;
     use std::future::Future;
@@ -1852,14 +1852,14 @@ mod tests {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_create_task() {
         let task: Task<_, Infallible> =
-            Task::with_notifications("test".to_string(), Default::default(), None,async {});
+            Task::with_notifications("test".to_string(), Default::default(), None, async {});
         assert_eq!(task.label(), "test");
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_create_no_notify() {
-        let t = Task::without_notifications("test".to_string(), Default::default(),async {});
+        let t = Task::without_notifications("test".to_string(), Default::default(), async {});
         assert_eq!(t.label(), "test");
     }
     #[cfg_attr(not(target_arch = "wasm32"), test)]
@@ -2008,9 +2008,9 @@ mod tests {
                 dyn Future<
                         Output = Box<
                             dyn Observer<
-                                Value = Box<dyn Any>,
-                                Output = FinishedObservation<Box<dyn Any>>,
-                            >,
+                                    Value = Box<dyn Any>,
+                                    Output = FinishedObservation<Box<dyn Any>>,
+                                >,
                         >,
                     > + 's,
             > {
@@ -2021,9 +2021,9 @@ mod tests {
                     Box::new(observer)
                         as Box<
                             dyn Observer<
-                                Value = Box<dyn Any>,
-                                Output = FinishedObservation<Box<dyn Any>>,
-                            >,
+                                    Value = Box<dyn Any>,
+                                    Output = FinishedObservation<Box<dyn Any>>,
+                                >,
                         >
                 })
             }
@@ -2034,5 +2034,3 @@ mod tests {
         }
     }
 }
-
-

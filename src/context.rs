@@ -22,7 +22,7 @@ use some_executor::task_local;
 task_local! {
     // Mutable task-local
     static COUNTER: u32;
-    
+
     // Immutable task-local
     static const CONFIG: String;
 }
@@ -87,7 +87,7 @@ async fn track_events() {
         record_event("started");
         process_data().await;
         record_event("completed");
-        
+
         // Print all events at the end
         EVENTS.with(|events| {
             for event in events.unwrap() {

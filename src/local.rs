@@ -1,10 +1,10 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::SomeLocalExecutor;
 use crate::observer::{
     ExecutorNotified, FinishedObservation, Observer, ObserverNotified, TypedObserver,
 };
 use crate::task::Task;
-use crate::SomeLocalExecutor;
 use std::any::Any;
 use std::convert::Infallible;
 use std::future::Future;
@@ -205,7 +205,7 @@ impl UnsafeErasedLocalExecutor {
         underlying: &mut (dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>> + 'e),
     ) -> Self {
         Self {
-            underlying: unsafe{std::mem::transmute(underlying)},
+            underlying: unsafe { std::mem::transmute(underlying) },
         }
     }
 
