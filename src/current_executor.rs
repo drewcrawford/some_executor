@@ -1,6 +1,6 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
-use crate::{DynExecutor};
+use crate::DynExecutor;
 
 fn current_task_executor() -> Option<Box<DynExecutor>> {
     crate::task::TASK_EXECUTOR.with(|e| {
@@ -9,10 +9,10 @@ fn current_task_executor() -> Option<Box<DynExecutor>> {
                 //in task, but we may or may not have executor
                 match e {
                     Some(e) => Some(e.clone_box()),
-                    None => None
+                    None => None,
                 }
-            },
-            None => None //not in a task
+            }
+            None => None, //not in a task
         }
     })
 }
@@ -31,12 +31,15 @@ Accesses the current executor.
 pub fn current_executor() -> Box<DynExecutor> {
     if let Some(executor) = current_task_executor() {
         executor
-    } else if let Some(executor ) = crate::thread_executor::thread_executor(|e| e.map(|e| e.clone_box())) {
+    } else if let Some(executor) =
+        crate::thread_executor::thread_executor(|e| e.map(|e| e.clone_box()))
+    {
         executor
-    } else if let Some(executor) = crate::global_executor::global_executor(|e| e.map(|e| e.clone_box())) {
+    } else if let Some(executor) =
+        crate::global_executor::global_executor(|e| e.map(|e| e.clone_box()))
+    {
         executor
-    }
-    else {
+    } else {
         Box::new(crate::last_resort::LastResortExecutor::new())
     }
 }

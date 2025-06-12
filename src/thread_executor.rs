@@ -1,8 +1,8 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
-use std::cell::RefCell;
-use crate::{DynExecutor, SomeLocalExecutor};
 use crate::observer::ExecutorNotified;
+use crate::{DynExecutor, SomeLocalExecutor};
+use std::cell::RefCell;
 
 thread_local! {
     static THREAD_EXECUTOR: RefCell<Option<Box<DynExecutor>>> = RefCell::new(None);
@@ -13,9 +13,7 @@ thread_local! {
 Accesses the executor that is available for the current thread.
 */
 pub fn thread_executor<R>(c: impl FnOnce(Option<&DynExecutor>) -> R) -> R {
-    THREAD_EXECUTOR.with(|e| {
-        c(e.borrow().as_ref().map(|e| &**e))
-    })
+    THREAD_EXECUTOR.with(|e| c(e.borrow().as_ref().map(|e| &**e)))
 }
 
 /**
@@ -30,16 +28,18 @@ pub fn set_thread_executor(runtime: Box<DynExecutor>) {
 /**
 Accesses the local executor that is available for the current thread.
 */
-pub fn thread_local_executor<R>(c: impl FnOnce(Option<&dyn SomeLocalExecutor<ExecutorNotifier=Box<dyn ExecutorNotified>>>) -> R) -> R {
-    THREAD_LOCAL_EXECUTOR.with(|e| {
-        c(e.borrow().as_ref().map(|e| &**e))
-    })
+pub fn thread_local_executor<R>(
+    c: impl FnOnce(Option<&dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>) -> R,
+) -> R {
+    THREAD_LOCAL_EXECUTOR.with(|e| c(e.borrow().as_ref().map(|e| &**e)))
 }
 
 /**
 Sets the local executor for the current thread.
 */
-pub fn set_thread_local_executor(runtime: Box<dyn SomeLocalExecutor<'static, ExecutorNotifier=Box<dyn ExecutorNotified>>>) {
+pub fn set_thread_local_executor(
+    runtime: Box<dyn SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn ExecutorNotified>>>,
+) {
     THREAD_LOCAL_EXECUTOR.with(|e| {
         *e.borrow_mut() = Some(runtime);
     });
@@ -49,7 +49,9 @@ Sets the local executor for the current thread
 
 This method wraps the executor in an adapter type that erases the underlying notifier.
 */
-pub fn set_thread_local_executor_adapting_notifier<E: SomeLocalExecutor<'static> + 'static>(runtime: E) {
+pub fn set_thread_local_executor_adapting_notifier<E: SomeLocalExecutor<'static> + 'static>(
+    runtime: E,
+) {
     let adapter = crate::local::OwnedSomeLocalExecutorErasingNotifier::new(runtime);
     set_thread_local_executor(Box::new(adapter));
 }

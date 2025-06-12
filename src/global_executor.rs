@@ -1,6 +1,6 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
+use crate::DynExecutor;
 use std::sync::OnceLock;
-use crate::{DynExecutor};
 
 static GLOBAL_RUNTIME: OnceLock<Box<DynExecutor>> = OnceLock::new();
 
@@ -26,13 +26,16 @@ Sets the global executor to this value.
 Values that reference the global_runtime after this will see the new value.
 */
 pub fn set_global_executor(runtime: Box<DynExecutor>) {
-    GLOBAL_RUNTIME.set(runtime).expect("Global runtime already set");
+    GLOBAL_RUNTIME
+        .set(runtime)
+        .expect("Global runtime already set");
 }
 
-#[cfg(test)] mod tests {
-    use std::any::Any;
-    use crate::global_executor::{global_executor};
+#[cfg(test)]
+mod tests {
+    use crate::global_executor::global_executor;
     use crate::task::{ConfigurationBuilder, Task};
+    use std::any::Any;
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
@@ -43,10 +46,15 @@ pub fn set_global_executor(runtime: Box<DynExecutor>) {
             let configuration = ConfigurationBuilder::new().build();
             //get a Box<dyn Any>
 
-            let task = Task::new_objsafe("test".into(), Box::new(async {
-                Box::new(()) as Box<dyn Any + Send + 'static>
-                // todo!()
-            }), configuration, None);
+            let task = Task::new_objsafe(
+                "test".into(),
+                Box::new(async {
+                    Box::new(()) as Box<dyn Any + Send + 'static>
+                    // todo!()
+                }),
+                configuration,
+                None,
+            );
             runtime.spawn_objsafe(task);
         }
     }

@@ -1,36 +1,36 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::task::{InFlightTaskCancellation, TaskID};
+use atomic_waker::AtomicWaker;
 use std::any::Any;
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::task::{Context, Poll};
-use atomic_waker::AtomicWaker;
-use crate::task::{InFlightTaskCancellation, TaskID};
 
-#[derive(Debug,PartialEq,Eq,Hash,Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Observation<T> {
     /**
-    The task is pending.
-*/
+        The task is pending.
+    */
     Pending,
     /**
-    The task is finished.
-*/
+        The task is finished.
+    */
     Ready(T),
     /**
-    The task was finished, but the value was already observed.
-*/
+        The task was finished, but the value was already observed.
+    */
     Done,
     /**
-    The task was cancelled.
-*/
+        The task was cancelled.
+    */
     Cancelled,
 }
 
-#[derive(Debug,PartialEq,Eq,Hash,Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum FinishedObservation<T> {
     /**
     The task is finished.
@@ -41,7 +41,6 @@ pub enum FinishedObservation<T> {
     */
     Cancelled,
 }
-
 
 #[derive(Debug)]
 struct Shared<T> {
@@ -55,7 +54,6 @@ struct Shared<T> {
     Indicates the observer was dropped without detach.
     */
     observer_cancelled: AtomicBool,
-
 
     in_flight_task_cancellation: InFlightTaskCancellation,
 }
@@ -77,46 +75,44 @@ Cancellation in some_executor is optimistic.  There are three types:
 3.  The executor may support cancellation.  In this case, it may drop the future and not run it again.  This is not guaranteed.
 */
 #[must_use]
-pub trait Observer: 'static + Future<Output=FinishedObservation<Self::Value>>  {
+pub trait Observer: 'static + Future<Output = FinishedObservation<Self::Value>> {
     type Value;
     fn observe(&self) -> Observation<Self::Value>;
 
     fn task_id(&self) -> &TaskID;
 
-    fn detach(self) where Self: Sized {
+    fn detach(self)
+    where
+        Self: Sized,
+    {
         std::mem::forget(self);
     }
 }
-
-
-
-
 
 /**
 A typed observer is an observer that is typed to a specific value.
 */
 #[derive(Debug)]
-pub struct TypedObserver<T,ENotifier:ExecutorNotified> {
+pub struct TypedObserver<T, ENotifier: ExecutorNotified> {
     shared: Arc<Shared<T>>,
     task_id: TaskID,
     notifier: Option<ENotifier>,
     detached: bool,
 }
 
-
-
-
-impl<'executor, T,ENotifier: ExecutorNotified> Drop for TypedObserver< T,ENotifier> {
+impl<'executor, T, ENotifier: ExecutorNotified> Drop for TypedObserver<T, ENotifier> {
     fn drop(&mut self) {
         if !self.detached {
-            self.shared.observer_cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+            self.shared
+                .observer_cancelled
+                .store(true, std::sync::atomic::Ordering::Relaxed);
             self.shared.in_flight_task_cancellation.cancel();
             self.notifier.take().map(|mut n| n.request_cancel());
         }
     }
 }
 
-impl<T: 'static,ENotifier: ExecutorNotified> Observer for TypedObserver<T,ENotifier> {
+impl<T: 'static, ENotifier: ExecutorNotified> Observer for TypedObserver<T, ENotifier> {
     type Value = T;
 
     fn observe(&self) -> Observation<Self::Value> {
@@ -132,23 +128,26 @@ impl<T: 'static,ENotifier: ExecutorNotified> Observer for TypedObserver<T,ENotif
 The sender side of an observer.  This side is held by the executor, and is used to send values to the observer.
 */
 #[derive(Debug)]
-pub(crate) struct ObserverSender<T,Notifier> {
+pub(crate) struct ObserverSender<T, Notifier> {
     shared: Arc<Shared<T>>,
-    pub(crate) notifier: Option<Notifier>
+    pub(crate) notifier: Option<Notifier>,
 }
 
-impl<T,Notifier> ObserverSender<T,Notifier> {
-    pub(crate) fn send(&mut self, value: T) where Notifier: ObserverNotified<T> {
+impl<T, Notifier> ObserverSender<T, Notifier> {
+    pub(crate) fn send(&mut self, value: T)
+    where
+        Notifier: ObserverNotified<T>,
+    {
         self.notifier.as_mut().map(|n| n.notify(&value));
         let mut lock = self.shared.lock.lock().unwrap();
         match *lock {
             Observation::Pending => {
                 *lock = Observation::Ready(value);
                 self.shared.waker.wake();
-            },
+            }
             Observation::Ready(_) => {
                 panic!("Observer already has a value");
-            },
+            }
             Observation::Done => {
                 panic!("Observer already completed");
             }
@@ -159,11 +158,13 @@ impl<T,Notifier> ObserverSender<T,Notifier> {
     }
 
     pub(crate) fn observer_cancelled(&self) -> bool {
-        self.shared.observer_cancelled.load(std::sync::atomic::Ordering::Relaxed)
+        self.shared
+            .observer_cancelled
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
-impl<T,Notifier> Drop for ObserverSender<T,Notifier> {
+impl<T, Notifier> Drop for ObserverSender<T, Notifier> {
     fn drop(&mut self) {
         self.shared.in_flight_task_cancellation.cancel();
         let mut lock = self.shared.lock.lock().unwrap();
@@ -171,10 +172,10 @@ impl<T,Notifier> Drop for ObserverSender<T,Notifier> {
             Observation::Pending => {
                 *lock = Observation::Cancelled;
                 self.shared.waker.wake();
-            },
+            }
             Observation::Ready(_) => {
                 //nothing to do
-            },
+            }
             Observation::Done => {
                 //nothing to do
             }
@@ -185,29 +186,23 @@ impl<T,Notifier> Drop for ObserverSender<T,Notifier> {
     }
 }
 
-impl<T,E: ExecutorNotified> TypedObserver<T,E> {
+impl<T, E: ExecutorNotified> TypedObserver<T, E> {
     pub fn observe(&self) -> Observation<T> {
         let mut lock = self.shared.lock.lock().unwrap();
         match *lock {
-            Observation::Pending => {
-                Observation::Pending
-            },
+            Observation::Pending => Observation::Pending,
             Observation::Ready(..) => {
                 let value = std::mem::replace(&mut *lock, Observation::Done);
                 value
-            },
-            Observation::Done => {
-                Observation::Done
             }
-            Observation::Cancelled => {
-                Observation::Cancelled
-            }
+            Observation::Done => Observation::Done,
+            Observation::Cancelled => Observation::Cancelled,
         }
     }
 
     /**
-    Returns the task id of the task being observed.
-*/
+        Returns the task id of the task being observed.
+    */
     pub fn task_id(&self) -> &TaskID {
         &self.task_id
     }
@@ -221,26 +216,22 @@ impl<T,E: ExecutorNotified> TypedObserver<T,E> {
     }
 }
 
-impl<T,E> Future for TypedObserver<T,E>
-where E: ExecutorNotified {
+impl<T, E> Future for TypedObserver<T, E>
+where
+    E: ExecutorNotified,
+{
     type Output = FinishedObservation<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.shared.waker.register(cx.waker());
         let o = self.observe();
         match o {
-            Observation::Pending => {
-                Poll::Pending
-            },
-            Observation::Ready(v) => {
-                Poll::Ready(FinishedObservation::Ready(v))
-            },
+            Observation::Pending => Poll::Pending,
+            Observation::Ready(v) => Poll::Ready(FinishedObservation::Ready(v)),
             Observation::Done => {
                 unreachable!("Observer should not be polled after completion");
-            },
-            Observation::Cancelled => {
-                Poll::Ready(FinishedObservation::Cancelled)
             }
+            Observation::Cancelled => Poll::Ready(FinishedObservation::Cancelled),
         }
     }
 }
@@ -265,13 +256,11 @@ possible designs:
 
 */
 pub trait ObserverNotified<T: ?Sized>: Unpin + 'static {
-
     /**
-    This function will be run inline when the task completes.
-*/
+        This function will be run inline when the task completes.
+    */
     fn notify(&mut self, value: &T);
 }
-
 
 /**
 A trait for executors to receive notifications.
@@ -290,14 +279,15 @@ pub trait ExecutorNotified: 'static {
     fn request_cancel(&mut self);
 }
 
-
 impl<T> ObserverNotified<T> for Infallible {
     fn notify(&mut self, _value: &T) {
         panic!("NoNotified should not be used");
     }
 }
 //support unboxing
-impl ObserverNotified<Box<(dyn std::any::Any + 'static)>> for Box<dyn ObserverNotified<(dyn std::any::Any + 'static)>> {
+impl ObserverNotified<Box<(dyn std::any::Any + 'static)>>
+    for Box<dyn ObserverNotified<(dyn std::any::Any + 'static)>>
+{
     fn notify(&mut self, value: &Box<(dyn Any + 'static)>) {
         let r = Box::as_mut(self);
         r.notify(value);
@@ -306,7 +296,9 @@ impl ObserverNotified<Box<(dyn std::any::Any + 'static)>> for Box<dyn ObserverNo
 
 //I guess a few ways?
 
-impl ObserverNotified<Box<(dyn Any + Send + 'static)>> for Box<dyn ObserverNotified<(dyn Any + Send + 'static)> + Send> {
+impl ObserverNotified<Box<(dyn Any + Send + 'static)>>
+    for Box<dyn ObserverNotified<(dyn Any + Send + 'static)> + Send>
+{
     fn notify(&mut self, value: &Box<(dyn Any + Send + 'static)>) {
         let r = Box::as_mut(self);
         r.notify(value);
@@ -319,11 +311,31 @@ impl<'executor> ExecutorNotified for Infallible {
     }
 }
 
-pub(crate) fn observer_channel<'enotifier, R,ONotifier,ENotifier: ExecutorNotified>(observer_notify: Option<ONotifier>, executor_notify: Option<ENotifier>, task_cancellation: InFlightTaskCancellation, task_id: TaskID) -> (ObserverSender<R,ONotifier>, TypedObserver< R,ENotifier>) {
-    let shared = Arc::new(Shared { lock: std::sync::Mutex::new(Observation::Pending), waker: AtomicWaker::new(), observer_cancelled: AtomicBool::new(false), in_flight_task_cancellation: task_cancellation });
-    (ObserverSender {shared: shared.clone(), notifier: observer_notify}, TypedObserver {shared, task_id, notifier: executor_notify, detached: false})
+pub(crate) fn observer_channel<'enotifier, R, ONotifier, ENotifier: ExecutorNotified>(
+    observer_notify: Option<ONotifier>,
+    executor_notify: Option<ENotifier>,
+    task_cancellation: InFlightTaskCancellation,
+    task_id: TaskID,
+) -> (ObserverSender<R, ONotifier>, TypedObserver<R, ENotifier>) {
+    let shared = Arc::new(Shared {
+        lock: std::sync::Mutex::new(Observation::Pending),
+        waker: AtomicWaker::new(),
+        observer_cancelled: AtomicBool::new(false),
+        in_flight_task_cancellation: task_cancellation,
+    });
+    (
+        ObserverSender {
+            shared: shared.clone(),
+            notifier: observer_notify,
+        },
+        TypedObserver {
+            shared,
+            task_id,
+            notifier: executor_notify,
+            detached: false,
+        },
+    )
 }
-
 
 /**
 Allow a `Box<dyn ExecutorNotified>` to be used as an ExecutorNotified directly.
@@ -345,10 +357,6 @@ impl<'executor> ExecutorNotified for Box<dyn ExecutorNotified + Send> {
     }
 }
 
-
-
-
-
 /*
 boilerplates
 
@@ -358,33 +366,33 @@ Observation - we want clone, Eq, Hash.
 default is not obvious to me – could be pending but idk
 we could support from based on the value
  */
-impl <T> From<T> for  Observation<T> {
+impl<T> From<T> for Observation<T> {
     fn from(value: T) -> Self {
         Observation::Ready(value)
     }
 }
 
-impl <T> From<Observation<T>> for Option<T> {
+impl<T> From<Observation<T>> for Option<T> {
     fn from(value: Observation<T>) -> Self {
         match value {
             Observation::Ready(v) => Some(v),
-            _ => None
+            _ => None,
         }
     }
 }
 
-#[cfg(test)] mod tests {
+#[cfg(test)]
+mod tests {
     use crate::observer::{ExecutorNotified, TypedObserver};
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_send() {
-
         /* observer can send when the underlying value can */
         #[allow(unused)]
-        fn ex< 'executor, T: Send,E: ExecutorNotified + Send>(_observer: TypedObserver<T,E>) {
+        fn ex<'executor, T: Send, E: ExecutorNotified + Send>(_observer: TypedObserver<T, E>) {
             fn assert_send<T: Send>() {}
-            assert_send::<TypedObserver<T,E>>();
+            assert_send::<TypedObserver<T, E>>();
         }
     }
     #[cfg_attr(not(target_arch = "wasm32"), test)]
@@ -392,9 +400,9 @@ impl <T> From<Observation<T>> for Option<T> {
     fn test_unpin() {
         /* observer can unpin */
         #[allow(unused)]
-        fn ex<'executor, T,E: ExecutorNotified + Unpin>(_observer: TypedObserver<T,E>) {
+        fn ex<'executor, T, E: ExecutorNotified + Unpin>(_observer: TypedObserver<T, E>) {
             fn assert_unpin<T: Unpin>() {}
-            assert_unpin::<TypedObserver<T,E>>();
+            assert_unpin::<TypedObserver<T, E>>();
         }
     }
 }

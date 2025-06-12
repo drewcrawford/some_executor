@@ -4,7 +4,7 @@
 A type that describes the expected runtime characteristics of the future.
 */
 #[non_exhaustive]
-#[derive(Copy,Clone,PartialEq,Eq,Hash,Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Hint {
     /**
     We don't know anything about the future.
