@@ -1,34 +1,163 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
+
+//! Global executor management for program-wide task execution.
+//! 
+//! This module provides functionality for setting and accessing a global executor
+//! that persists for the entire lifetime of the program. This is useful when you
+//! need to spawn tasks from contexts where you cannot easily pass an executor
+//! as a parameter, such as signal handlers or global initialization code.
+//! 
+//! # Overview
+//! 
+//! The global executor pattern allows you to:
+//! - Set a single executor for the entire program using [`set_global_executor`]
+//! - Access this executor from anywhere using [`global_executor`]
+//! - Spawn tasks without needing to thread an executor through your call stack
+//! 
+//! # Important Considerations
+//! 
+//! - The global executor can only be set once. Attempting to set it multiple times
+//!   will panic.
+//! - You must initialize the global executor before attempting to use it. Accessing
+//!   an uninitialized global executor will return `None`.
+//! - For most use cases, [`crate::current_executor::current_executor`] is preferred
+//!   as it provides more flexibility and context-aware executor selection.
+//! 
+//! # Example Usage
+//! 
+//! ```no_run
+//! use some_executor::global_executor::{set_global_executor, global_executor};
+//! use some_executor::DynExecutor;
+//! 
+//! // Initialize the global executor early in your program
+//! let executor: Box<DynExecutor> = todo!(); // Your executor implementation
+//! set_global_executor(executor);
+//! 
+//! // Later, from anywhere in your program
+//! global_executor(|e| {
+//!     if let Some(executor) = e {
+//!         // Use the executor
+//!         let mut executor = executor.clone_box();
+//!         // spawn tasks...
+//!     }
+//! });
+//! ```
+
 use crate::DynExecutor;
 use std::sync::OnceLock;
 
 static GLOBAL_RUNTIME: OnceLock<Box<DynExecutor>> = OnceLock::new();
 
-/**
-Accesses an executor that is available for the global lifetime.
-
-It is recommended to use [crate::current_executor::current_executor] instead, as it will
-return the executor that is currently in use, which may be more appropriate for the current context.
-
-# Preconditions
-
-The executor must have been initialized with [set_global_executor].
-
-# example
-```
-use some_executor::global_executor::global_executor;
-let e = global_executor(|e| e.map(|e| e.clone_box()));
-```
-*/
+/// Accesses the global executor through a callback function.
+/// 
+/// This function provides safe access to the global executor (if one has been set)
+/// through a callback pattern. The callback receives an `Option<&DynExecutor>` which
+/// will be `Some` if a global executor has been initialized, or `None` otherwise.
+/// 
+/// # Arguments
+/// 
+/// * `c` - A closure that receives `Option<&DynExecutor>` and returns a value of type `R`
+/// 
+/// # Returns
+/// 
+/// Whatever value the callback function returns.
+/// 
+/// # Usage Patterns
+/// 
+/// ## Cloning the executor for task spawning
+/// 
+/// ```no_run
+/// use some_executor::global_executor::global_executor;
+/// use some_executor::task::{Task, ConfigurationBuilder};
+/// 
+/// let mut executor = global_executor(|e| {
+///     e.expect("Global executor not initialized").clone_box()
+/// });
+/// 
+/// // Now you can spawn tasks
+/// let task = Task::without_notifications(
+///     "my-task".to_string(),
+///     async { 42 },
+///     ConfigurationBuilder::new().build()
+/// );
+/// # // executor.spawn(task);
+/// ```
+/// 
+/// ## Checking if executor is available
+/// 
+/// ```
+/// use some_executor::global_executor::global_executor;
+/// 
+/// let is_available = global_executor(|e| e.is_some());
+/// if !is_available {
+///     println!("Global executor not initialized");
+/// }
+/// ```
+/// 
+/// ## Spawning with fallback
+/// 
+/// ```
+/// use some_executor::global_executor::global_executor;
+/// use some_executor::current_executor::current_executor;
+/// 
+/// // Try global executor, fall back to current executor
+/// let mut executor = global_executor(|e| {
+///     e.map(|exec| exec.clone_box())
+/// }).unwrap_or_else(|| current_executor());
+/// ```
+/// 
+/// # Important Notes
+/// 
+/// - The global executor must be initialized with [`set_global_executor`] before use
+/// - For most use cases, prefer [`crate::current_executor::current_executor`] which
+///   provides more flexible executor discovery
+/// - The callback pattern ensures thread-safe access to the global executor
 pub fn global_executor<R>(c: impl FnOnce(Option<&DynExecutor>) -> R) -> R {
     let e = GLOBAL_RUNTIME.get();
     c(e.map(|e| &**e))
 }
 
-/**
-Sets the global executor to this value.
-Values that reference the global_runtime after this will see the new value.
-*/
+/// Sets the global executor for the entire program.
+/// 
+/// This function initializes the global executor that will be available throughout
+/// the program's lifetime. Once set, the executor can be accessed from anywhere
+/// using [`global_executor`].
+/// 
+/// # Arguments
+/// 
+/// * `runtime` - A boxed [`DynExecutor`] that will serve as the global executor
+/// 
+/// # Panics
+/// 
+/// This function will panic if called more than once. The global executor can only
+/// be initialized once during the program's lifetime.
+/// 
+/// # Example
+/// 
+/// ```no_run
+/// use some_executor::global_executor::set_global_executor;
+/// use some_executor::DynExecutor;
+/// 
+/// // Early in your program initialization
+/// fn init_executor() {
+///     let executor: Box<DynExecutor> = todo!(); // Your executor implementation
+///     set_global_executor(executor);
+/// }
+/// ```
+/// 
+/// # Best Practices
+/// 
+/// - Call this function early in your program's initialization, ideally in `main()`
+///   or during startup
+/// - Ensure the executor is fully configured before setting it as the global executor
+/// - Consider whether you actually need a global executor - in many cases,
+///   [`crate::current_executor`] provides a more flexible solution
+/// 
+/// # Thread Safety
+/// 
+/// This function is thread-safe and uses internal synchronization. However, it should
+/// typically be called from a single initialization point to avoid race conditions
+/// where multiple threads attempt to set the global executor.
 pub fn set_global_executor(runtime: Box<DynExecutor>) {
     GLOBAL_RUNTIME
         .set(runtime)
