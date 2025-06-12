@@ -26,10 +26,7 @@ fn current_task_executor() -> Option<Box<DynExecutor>> {
         match e {
             Some(e) => {
                 //in task, but we may or may not have executor
-                match e {
-                    Some(e) => Some(e.clone_box()),
-                    None => None,
-                }
+                e.as_ref().map(|e| e.clone_box())
             }
             None => None, //not in a task
         }

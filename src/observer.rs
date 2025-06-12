@@ -243,7 +243,7 @@ impl<'executor, T, ENotifier: ExecutorNotified> Drop for TypedObserver<T, ENotif
                 .observer_cancelled
                 .store(true, std::sync::atomic::Ordering::Relaxed);
             self.shared.in_flight_task_cancellation.cancel();
-            self.notifier.take().map(|mut n| n.request_cancel());
+            if let Some(mut n) = self.notifier.take() { n.request_cancel() }
         }
     }
 }
@@ -274,7 +274,7 @@ impl<T, Notifier> ObserverSender<T, Notifier> {
     where
         Notifier: ObserverNotified<T>,
     {
-        self.notifier.as_mut().map(|n| n.notify(&value));
+        if let Some(n) = self.notifier.as_mut() { n.notify(&value) }
         let mut lock = self.shared.lock.lock().unwrap();
         match *lock {
             Observation::Pending => {
@@ -348,8 +348,8 @@ impl<T, E: ExecutorNotified> TypedObserver<T, E> {
         match *lock {
             Observation::Pending => Observation::Pending,
             Observation::Ready(..) => {
-                let value = std::mem::replace(&mut *lock, Observation::Done);
-                value
+                
+                std::mem::replace(&mut *lock, Observation::Done)
             }
             Observation::Done => Observation::Done,
             Observation::Cancelled => Observation::Cancelled,

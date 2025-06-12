@@ -5,10 +5,12 @@ A type that describes the expected runtime characteristics of the task.
 */
 #[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Default)]
 pub enum Hint {
     /**
     We don't know anything about the task.
     */
+    #[default]
     Unknown,
     /**
     The task is expected to spend most of its time yielded.
@@ -21,8 +23,3 @@ pub enum Hint {
     CPU,
 }
 
-impl Default for Hint {
-    fn default() -> Self {
-        Hint::Unknown
-    }
-}

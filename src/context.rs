@@ -648,7 +648,7 @@ impl<T: 'static> LocalKey<T> {
     {
         self.0.with(|slot| {
             let value = slot.borrow();
-            value.expect("Task-local not set").clone()
+            value.expect("Task-local not set")
         })
     }
 
@@ -808,7 +808,7 @@ impl<T: 'static> LocalKeyImmutable<T> {
     {
         self.0.with(|slot| {
             let value = slot.borrow();
-            value.expect("Task-local not set").clone()
+            value.expect("Task-local not set")
         })
     }
 

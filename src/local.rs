@@ -54,18 +54,15 @@ impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>>
         self.executor.spawn_local(task)
     }
 
-    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(
+    async fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
-    ) -> impl Future<Output = impl Observer<Value = F::Output>>
+    ) -> impl Observer<Value = F::Output>
     where
         Self: Sized,
         F: 'executor,
         F::Output: 'static + Unpin,
-    {
-        #[allow(clippy::async_yields_async)]
-        async { self.executor.spawn_local_async(task).await }
-    }
+    { self.executor.spawn_local_async(task).await }
 
     fn spawn_local_objsafe(
         &mut self,
@@ -143,18 +140,15 @@ impl<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalE
         self.executor.spawn_local(task)
     }
 
-    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(
+    async fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
-    ) -> impl Future<Output = impl Observer<Value = F::Output>>
+    ) -> impl Observer<Value = F::Output>
     where
         Self: Sized,
         F: 'underlying,
         F::Output: 'static + Unpin,
-    {
-        #[allow(clippy::async_yields_async)]
-        async { self.executor.spawn_local_async(task).await }
-    }
+    { self.executor.spawn_local_async(task).await }
 
     fn spawn_local_objsafe(
         &mut self,

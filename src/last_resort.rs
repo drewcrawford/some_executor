@@ -156,20 +156,17 @@ impl SomeExecutor for LastResortExecutor {
         o
     }
 
-    fn spawn_async<'s, F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(
+    async fn spawn_async<'s, F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(
         &'s mut self,
         task: Task<F, Notifier>,
-    ) -> impl Future<Output = impl Observer<Value = F::Output>> + Send + 's
+    ) -> impl Observer<Value = F::Output>
     where
         Self: Sized,
         F::Output: Send + Unpin,
     {
-        #[allow(clippy::async_yields_async)]
-        async {
-            let (s, o) = task.spawn(self);
-            Self::spawn(s);
-            o
-        }
+        let (s, o) = task.spawn(self);
+        Self::spawn(s);
+        o
     }
 
     fn spawn_objsafe(

@@ -1363,11 +1363,11 @@ impl ConfigurationBuilder {
     /// - `poll_after`: `Instant::now()`
     pub fn build(self) -> Configuration {
         Configuration {
-            hint: self.hint.unwrap_or_else(|| Hint::default()),
-            priority: self.priority.unwrap_or_else(|| priority::Priority::Unknown),
+            hint: self.hint.unwrap_or_default(),
+            priority: self.priority.unwrap_or(priority::Priority::Unknown),
             poll_after: self
                 .poll_after
-                .unwrap_or_else(|| crate::sys::Instant::now()),
+                .unwrap_or_else(crate::sys::Instant::now),
         }
     }
 }
@@ -1767,9 +1767,9 @@ impl From<bool> for InFlightTaskCancellation {
     }
 }
 
-impl Into<bool> for InFlightTaskCancellation {
-    fn into(self) -> bool {
-        self.0.load(std::sync::atomic::Ordering::Relaxed)
+impl From<InFlightTaskCancellation> for bool {
+    fn from(val: InFlightTaskCancellation) -> Self {
+        val.0.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

@@ -29,23 +29,20 @@ impl<UnderlyingNotifier: ExecutorNotified + Send> SomeExecutor
         downcasted
     }
 
-    fn spawn_async<'s, F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(
+    async fn spawn_async<'s, F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(
         &'s mut self,
         task: Task<F, Notifier>,
-    ) -> impl Future<Output = impl Observer<Value = F::Output>> + Send + 's
+    ) -> impl Observer<Value = F::Output>
     where
         Self: Sized,
         F::Output: Send + Unpin,
     {
-        #[allow(clippy::async_yields_async)]
-        async {
-            let underlying = self.as_mut();
-            let objsafe = task.into_objsafe();
-            let observer = underlying.spawn_objsafe(objsafe);
-            //write in the type again
-            let downcasted: DowncastObserver<_, F::Output> = DowncastObserver::new(observer);
-            downcasted
-        }
+        let underlying = self.as_mut();
+        let objsafe = task.into_objsafe();
+        let observer = underlying.spawn_objsafe(objsafe);
+        //write in the type again
+        let downcasted: DowncastObserver<_, F::Output> = DowncastObserver::new(observer);
+        downcasted
     }
 
     fn spawn_objsafe(
