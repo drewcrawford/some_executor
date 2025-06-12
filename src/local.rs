@@ -212,7 +212,7 @@ impl UnsafeErasedLocalExecutor {
 
     fn executor(
         &mut self,
-    ) -> &mut (dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>> + '_) {
+    ) -> &mut (dyn SomeLocalExecutor<'_, ExecutorNotifier = Box<dyn ExecutorNotified>> + '_) {
         // Safety: `underlying` is assumed to be valid for the duration of `&mut self`
         unsafe {
             std::mem::transmute::<
