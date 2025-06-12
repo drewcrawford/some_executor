@@ -1,5 +1,7 @@
 # wasm v1
 on: [push]
+env:
+  RUSTFLAGS: "-D warnings"
 jobs:
   ci:
     runs-on: ubuntu-latest

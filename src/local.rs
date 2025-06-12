@@ -205,7 +205,7 @@ impl UnsafeErasedLocalExecutor {
         underlying: &mut (dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>> + 'e),
     ) -> Self {
         Self {
-            underlying: std::mem::transmute(underlying),
+            underlying: unsafe{std::mem::transmute(underlying)},
         }
     }
 
