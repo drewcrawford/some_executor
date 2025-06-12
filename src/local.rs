@@ -62,7 +62,9 @@ impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>>
         Self: Sized,
         F: Future + 'executor,
         F::Output: 'static + Unpin,
-    { self.executor.spawn_local_async(task).await }
+    {
+        self.executor.spawn_local_async(task).await
+    }
 
     fn spawn_local_objsafe(
         &mut self,
@@ -147,7 +149,9 @@ impl<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalE
         Self: Sized,
         F: Future + 'underlying,
         F::Output: 'static + Unpin,
-    { self.executor.spawn_local_async(task).await }
+    {
+        self.executor.spawn_local_async(task).await
+    }
 
     fn spawn_local_objsafe(
         &mut self,

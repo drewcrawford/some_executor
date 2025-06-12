@@ -1364,9 +1364,7 @@ impl ConfigurationBuilder {
         Configuration {
             hint: self.hint.unwrap_or_default(),
             priority: self.priority.unwrap_or(priority::Priority::Unknown),
-            poll_after: self
-                .poll_after
-                .unwrap_or_else(crate::sys::Instant::now),
+            poll_after: self.poll_after.unwrap_or_else(crate::sys::Instant::now),
         }
     }
 }
