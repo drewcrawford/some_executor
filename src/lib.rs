@@ -3,6 +3,8 @@
 
 # some_executor
 
+[logo](art/logo.png)
+
 Rust made the terrible mistake of not having an async executor in std.  And worse: there is no
 trait for executors to implement, nor a useful API for users to expect.  The result is everyone has to write
 their code to a specific executor, and it's always tokio.  But tokio has too many drawbacks to make

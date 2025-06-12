@@ -5,11 +5,15 @@ use std::sync::OnceLock;
 static GLOBAL_RUNTIME: OnceLock<Box<DynExecutor>> = OnceLock::new();
 
 /**
-Accesses an executor that is available for the global / arbitrary lifetime.
+Accesses an executor that is available for the global lifetime.
+
+It is recommended to use [crate::current_executor::current_executor] instead, as it will
+return the executor that is currently in use, which may be more appropriate for the current context.
 
 # Preconditions
 
-The runtime must have been initialized with `set_global_runtime`.
+The executor must have been initialized with [set_global_executor].
+
 # example
 ```
 use some_executor::global_executor::global_executor;

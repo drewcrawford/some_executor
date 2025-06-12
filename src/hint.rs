@@ -1,22 +1,22 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
 /**
-A type that describes the expected runtime characteristics of the future.
+A type that describes the expected runtime characteristics of the task.
 */
 #[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Hint {
     /**
-    We don't know anything about the future.
+    We don't know anything about the task.
     */
     Unknown,
     /**
-    The future is expected to spend most of its time yielded.
+    The task is expected to spend most of its time yielded.
     */
     IO,
 
     /**
-    The future is expected to spend most of its time computing.
+    The task is expected to spend most of its time computing.
     */
     CPU,
 }
