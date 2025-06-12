@@ -440,8 +440,9 @@ impl<'future> SomeLocalExecutor<'future> for Infallible {
         <F as Future>::Output: 'static,
     {
         #[allow(unreachable_code)]
+        #[allow(clippy::async_yields_async)]
         {
-            async { unimplemented!() as TypedObserver<F::Output, Infallible> }
+            async { todo!() as TypedObserver<F::Output, Infallible> }
         }
     }
 

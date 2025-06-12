@@ -63,6 +63,7 @@ impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>>
         F: 'executor,
         F::Output: 'static + Unpin,
     {
+        #[allow(clippy::async_yields_async)]
         async { self.executor.spawn_local_async(task).await }
     }
 
@@ -89,6 +90,7 @@ impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>>
                 >,
             > + 's,
     > {
+        #[allow(clippy::async_yields_async)]
         Box::new(async {
             let objsafe_spawn_fut = self.executor.spawn_local_objsafe_async(task);
             Box::into_pin(objsafe_spawn_fut).await
@@ -150,6 +152,7 @@ impl<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalE
         F: 'underlying,
         F::Output: 'static + Unpin,
     {
+        #[allow(clippy::async_yields_async)]
         async { self.executor.spawn_local_async(task).await }
     }
 
@@ -176,6 +179,7 @@ impl<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalE
                 >,
             > + 's,
     > {
+        #[allow(clippy::async_yields_async)]
         Box::new(async {
             let objsafe_spawn_fut = self.executor.spawn_local_objsafe_async(task);
             Box::into_pin(objsafe_spawn_fut).await
@@ -252,6 +256,7 @@ impl<'a> SomeLocalExecutor<'a> for UnsafeErasedLocalExecutor {
         F::Output: 'static,
     {
         #[allow(unreachable_code)]
+        #[allow(clippy::async_yields_async)]
         {
             async {
                 unimplemented!("Not implemented for erased executor; use objsafe method")

@@ -164,6 +164,7 @@ impl SomeExecutor for LastResortExecutor {
         Self: Sized,
         F::Output: Send + Unpin,
     {
+        #[allow(clippy::async_yields_async)]
         async {
             let (s, o) = task.spawn(self);
             Self::spawn(s);
@@ -202,6 +203,7 @@ impl SomeExecutor for LastResortExecutor {
                 >,
             > + 's,
     > {
+        #[allow(clippy::async_yields_async)]
         Box::new(async {
             let (s, o) = task.spawn_objsafe(self);
             Self::spawn(s);

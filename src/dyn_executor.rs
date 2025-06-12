@@ -37,6 +37,7 @@ impl<UnderlyingNotifier: ExecutorNotified + Send> SomeExecutor
         Self: Sized,
         F::Output: Send + Unpin,
     {
+        #[allow(clippy::async_yields_async)]
         async {
             let underlying = self.as_mut();
             let objsafe = task.into_objsafe();
