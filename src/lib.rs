@@ -125,6 +125,39 @@ use std::convert::Infallible;
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
+
+// Type aliases for complex types to satisfy clippy::type_complexity warnings
+
+/// Type alias for a boxed future that outputs boxed Any and is Send + 'static
+type BoxedSendFuture = Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>;
+
+/// Type alias for a boxed observer notifier that handles Send Any values
+type BoxedSendObserverNotifier = Box<dyn ObserverNotified<dyn Any + Send> + Send>;
+
+/// Type alias for a Task that can be used with object-safe spawning
+type ObjSafeTask = Task<BoxedSendFuture, BoxedSendObserverNotifier>;
+
+/// Type alias for a boxed observer that handles Send Any values
+type BoxedSendObserver = Box<dyn Observer<Value = Box<dyn Any + Send>, Output = FinishedObservation<Box<dyn Any + Send>>> + Send>;
+
+/// Type alias for a future that returns a boxed observer for Send Any values
+type BoxedSendObserverFuture<'s> = Box<dyn Future<Output = BoxedSendObserver> + 's>;
+
+/// Type alias for a boxed future that outputs boxed Any (non-Send)
+type BoxedLocalFuture = Pin<Box<dyn Future<Output = Box<dyn Any>>>>;
+
+/// Type alias for a boxed observer notifier that handles Any values (non-Send)
+type BoxedLocalObserverNotifier = Box<dyn ObserverNotified<(dyn Any + 'static)>>;
+
+/// Type alias for a Task that can be used with local object-safe spawning
+type ObjSafeLocalTask = Task<BoxedLocalFuture, BoxedLocalObserverNotifier>;
+
+/// Type alias for a boxed observer that handles Any values (non-Send)
+type BoxedLocalObserver = Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>;
+
+/// Type alias for a future that returns a boxed observer for local Any values
+type BoxedLocalObserverFuture<'s> = Box<dyn Future<Output = BoxedLocalObserver> + 's>;
+
 /*
 Design notes.
 Send is required because we often want to take this trait object and port it to another thread, etc.
@@ -200,14 +233,8 @@ pub trait SomeExecutor: Send + Sync {
     */
     fn spawn_objsafe(
         &mut self,
-        task: Task<
-            Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>,
-            Box<dyn ObserverNotified<dyn Any + Send> + Send>,
-        >,
-    ) -> Box<
-        dyn Observer<Value = Box<dyn Any + Send>, Output = FinishedObservation<Box<dyn Any + Send>>>
-            + Send,
-    >;
+        task: ObjSafeTask,
+    ) -> BoxedSendObserver;
 
     /**
     Spawns a future onto the runtime.
@@ -218,20 +245,8 @@ pub trait SomeExecutor: Send + Sync {
     */
     fn spawn_objsafe_async<'s>(
         &'s mut self,
-        task: Task<
-            Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>,
-            Box<dyn ObserverNotified<dyn Any + Send> + Send>,
-        >,
-    ) -> Box<
-        dyn Future<
-                Output = Box<
-                    dyn Observer<
-                            Value = Box<dyn Any + Send>,
-                            Output = FinishedObservation<Box<dyn Any + Send>>,
-                        > + Send,
-                >,
-            > + 's,
-    >;
+        task: ObjSafeTask,
+    ) -> BoxedSendObserverFuture<'s>;
 
     /**
     Clones the executor.
@@ -359,25 +374,13 @@ pub trait SomeLocalExecutor<'future> {
     */
     fn spawn_local_objsafe(
         &mut self,
-        task: Task<
-            Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<(dyn Any + 'static)>>,
-        >,
-    ) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>;
+        task: ObjSafeLocalTask,
+    ) -> BoxedLocalObserver;
 
     fn spawn_local_objsafe_async<'s>(
         &'s mut self,
-        task: Task<
-            Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<(dyn Any + 'static)>>,
-        >,
-    ) -> Box<
-        dyn Future<
-                Output = Box<
-                    dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>,
-                >,
-            > + 's,
-    >;
+        task: ObjSafeLocalTask,
+    ) -> BoxedLocalObserverFuture<'s>;
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
 }

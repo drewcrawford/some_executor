@@ -84,9 +84,14 @@ use crate::observer::ExecutorNotified;
 use crate::{DynExecutor, SomeLocalExecutor};
 use std::cell::RefCell;
 
+// Type alias for complex types to satisfy clippy::type_complexity warnings
+
+/// Type alias for a thread-local executor that can handle local tasks
+type ThreadLocalExecutor = RefCell<Option<Box<dyn SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn ExecutorNotified>>>>>;
+
 thread_local! {
     static THREAD_EXECUTOR: RefCell<Option<Box<DynExecutor>>> = RefCell::new(None);
-    static THREAD_LOCAL_EXECUTOR: RefCell<Option<Box<dyn SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn ExecutorNotified>>>>> = RefCell::new(None);
+    static THREAD_LOCAL_EXECUTOR: ThreadLocalExecutor = RefCell::new(None);
 }
 
 /// Accesses the executor that is available for the current thread.

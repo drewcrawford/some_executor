@@ -102,6 +102,27 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::task::{Context, Poll};
 
+// Type aliases for complex types to satisfy clippy::type_complexity warnings
+
+/// Type alias for a thread-local executor that can handle local tasks
+type ThreadLocalExecutor = RefCell<Option<Box<dyn SomeLocalExecutor<'static, ExecutorNotifier=Box<dyn ExecutorNotified>>>>>;
+
+/// Type alias for a boxed future that outputs boxed Any and is Send + 'static
+type BoxedSendFuture = Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>;
+
+/// Type alias for a boxed observer notifier that handles Send Any values
+type BoxedSendObserverNotifier = Box<dyn ObserverNotified<dyn Any + Send> + Send>;
+
+/// Type alias for a Task that can be used with object-safe spawning
+type ObjSafeTask = Task<BoxedSendFuture, BoxedSendObserverNotifier>;
+
+/// Task metadata and state to reduce parameter count in common_poll function
+struct TaskMetadata {
+    priority: Priority,
+    task_id: TaskID,
+    poll_after: crate::sys::Instant,
+}
+
 /// A unique identifier for a task.
 ///
 /// `TaskID` provides a way to uniquely identify and track tasks throughout their lifecycle.
@@ -531,7 +552,7 @@ task_local! {
 }
 
 thread_local! {
-    pub static TASK_LOCAL_EXECUTOR: RefCell<Option<Box<dyn SomeLocalExecutor<'static, ExecutorNotifier=Box<dyn ExecutorNotified>>>>> = RefCell::new(None);
+    pub static TASK_LOCAL_EXECUTOR: ThreadLocalExecutor = RefCell::new(None);
 }
 
 impl<F: Future, N> Task<F, N> {
@@ -909,10 +930,7 @@ impl<F: Future, N> Task<F, N> {
     */
     pub fn into_objsafe(
         self,
-    ) -> Task<
-        Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>,
-        Box<dyn ObserverNotified<dyn Any + Send> + Send>,
-    >
+    ) -> ObjSafeTask
     where
         N: ObserverNotified<F::Output> + Send,
         F::Output: Send + 'static + Unpin,
@@ -963,9 +981,7 @@ fn common_poll<'l, F, N, L>(
     cancellation: &mut Option<InFlightTaskCancellation>,
     executor: &mut Option<Box<dyn SomeExecutor<ExecutorNotifier = Infallible>>>,
     local_executor: Option<&mut L>,
-    priority: Priority,
-    task_id: TaskID,
-    poll_after: crate::sys::Instant,
+    metadata: TaskMetadata,
     cx: &mut Context,
 ) -> std::task::Poll<()>
 where
@@ -974,7 +990,7 @@ where
     L: SomeLocalExecutor<'l>,
 {
     assert!(
-        poll_after <= crate::sys::Instant::now(),
+        metadata.poll_after <= crate::sys::Instant::now(),
         "Conforming executors should not poll tasks before the poll_after time."
     );
     if sender.observer_cancelled() {
@@ -998,10 +1014,10 @@ where
             );
         });
         TASK_PRIORITY.with_mut(|p| {
-            *p = Some(priority);
+            *p = Some(metadata.priority);
         });
         TASK_ID.with_mut(|i| {
-            *i = Some(task_id);
+            *i = Some(metadata.task_id);
         });
         TASK_EXECUTOR.with_mut(|e| {
             *e = Some(executor.take());
@@ -1093,6 +1109,11 @@ where
             )
         };
 
+        let metadata = TaskMetadata {
+            priority: *priority.get_mut(),
+            task_id,
+            poll_after,
+        };
         common_poll(
             future,
             sender.get_mut(),
@@ -1100,9 +1121,7 @@ where
             cancellation.get_mut(),
             executor.get_mut(),
             local_executor,
-            *priority.get_mut(),
-            task_id,
-            poll_after,
+            metadata,
             cx,
         )
     }
@@ -1157,6 +1176,11 @@ where
             (future, sender, label, priority, cancellation, task_id)
         };
 
+        let metadata = TaskMetadata {
+            priority: *priority.get_mut(),
+            task_id,
+            poll_after,
+        };
         common_poll(
             future,
             sender.get_mut(),
@@ -1164,9 +1188,7 @@ where
             cancellation.get_mut(),
             &mut some_executor,
             Some(executor),
-            *priority.get_mut(),
-            task_id,
-            poll_after,
+            metadata,
             cx,
         )
     }
