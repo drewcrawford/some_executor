@@ -1,11 +1,15 @@
+# wasm v1
 on: [push]
 jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cargo test
+      - run: cargo fmt --check
+      - run: cargo check
+      - run: cargo clippy --no-deps
       - run: cargo doc
+      - run: cargo test
       - name: Build wasm
         run: |
           rustup install nightly  
