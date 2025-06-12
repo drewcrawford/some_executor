@@ -160,7 +160,7 @@ pub type ObjSafeLocalTask = Task<BoxedLocalFuture, BoxedLocalObserverNotifier>;
 pub type BoxedLocalObserver =
     Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>;
 
-/// Type alias for a future that returns a boxed observer for local Any values 
+/// Type alias for a future that returns a boxed observer for local Any values
 pub type BoxedLocalObserverFuture<'s> = Box<dyn Future<Output = BoxedLocalObserver> + 's>;
 
 /*
