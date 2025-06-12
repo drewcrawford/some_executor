@@ -29,8 +29,8 @@ impl<UnderlyingNotifier: ExecutorNotified + Send> SomeExecutor
         downcasted
     }
 
-    async fn spawn_async<'s, F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(
-        &'s mut self,
+    async fn spawn_async<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(
+        &mut self,
         task: Task<F, Notifier>,
     ) -> impl Observer<Value = F::Output>
     where

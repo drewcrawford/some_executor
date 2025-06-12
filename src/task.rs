@@ -403,7 +403,7 @@ impl<F: Future, ONotifier, ENotifier> SpawnedTask<F, ONotifier, ENotifier> {
     }
 }
 
-impl<'executor, F: Future, ONotifier, Executor> SpawnedLocalTask<F, ONotifier, Executor> {
+impl<F: Future, ONotifier, Executor> SpawnedLocalTask<F, ONotifier, Executor> {
     /// Returns the execution hint for this spawned local task.
     pub fn hint(&self) -> Hint {
         self.hint
@@ -822,7 +822,6 @@ impl<F: Future, N> Task<F, N> {
     Second, the objsafe spawn method cannot have any generics.  Therefore, the future type is erased (boxed) and worse,
     the output type is erased as well.  Accordingly we do not know what it is.
     */
-
     pub fn spawn_objsafe<Executor: SomeExecutor>(
         mut self,
         executor: &mut Executor,
@@ -1788,7 +1787,6 @@ impl From<TaskID> for u64 {
     /**
     Equivalent to [TaskID::to_u64].
     */
-
     fn from(id: TaskID) -> u64 {
         id.to_u64()
     }

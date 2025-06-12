@@ -236,7 +236,7 @@ pub struct TypedObserver<T, ENotifier: ExecutorNotified> {
     detached: bool,
 }
 
-impl<'executor, T, ENotifier: ExecutorNotified> Drop for TypedObserver<T, ENotifier> {
+impl<T, ENotifier: ExecutorNotified> Drop for TypedObserver<T, ENotifier> {
     fn drop(&mut self) {
         if !self.detached {
             self.shared
@@ -549,13 +549,13 @@ impl ObserverNotified<Box<(dyn Any + Send + 'static)>>
     }
 }
 
-impl<'executor> ExecutorNotified for Infallible {
+impl ExecutorNotified for Infallible {
     fn request_cancel(&mut self) {
         panic!("NoNotified should not be used");
     }
 }
 
-pub(crate) fn observer_channel<'enotifier, R, ONotifier, ENotifier: ExecutorNotified>(
+pub(crate) fn observer_channel<R, ONotifier, ENotifier: ExecutorNotified>(
     observer_notify: Option<ONotifier>,
     executor_notify: Option<ENotifier>,
     task_cancellation: InFlightTaskCancellation,
@@ -595,7 +595,7 @@ impl ExecutorNotified for Box<dyn ExecutorNotified + '_> {
 /*
 I don't really get why we need both of these... but we do!
  */
-impl<'executor> ExecutorNotified for Box<dyn ExecutorNotified + Send> {
+impl ExecutorNotified for Box<dyn ExecutorNotified + Send> {
     fn request_cancel(&mut self) {
         (**self).request_cancel();
     }

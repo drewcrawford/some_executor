@@ -40,13 +40,13 @@ impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>>
 {
     type ExecutorNotifier = Box<dyn ExecutorNotified>;
 
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(
+    fn spawn_local<F, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
     ) -> impl Observer<Value = F::Output>
     where
         Self: Sized,
-        F: 'executor,
+        F: Future + 'executor,
         /* I am a little uncertain whether this is really required */
         <F as Future>::Output: Unpin,
         <F as Future>::Output: 'static,
@@ -54,13 +54,13 @@ impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>>
         self.executor.spawn_local(task)
     }
 
-    async fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(
+    async fn spawn_local_async<F, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
     ) -> impl Observer<Value = F::Output>
     where
         Self: Sized,
-        F: 'executor,
+        F: Future + 'executor,
         F::Output: 'static + Unpin,
     { self.executor.spawn_local_async(task).await }
 
@@ -104,7 +104,6 @@ impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>>
 /**
 Like `SomeLocalExecutorErasingNotifier`, but owns the underlying executor.
 */
-
 pub(crate) struct OwnedSomeLocalExecutorErasingNotifier<'underlying, UnderlyingExecutor> {
     executor: UnderlyingExecutor,
     _phantom: PhantomData<&'underlying ()>,
@@ -126,13 +125,13 @@ impl<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalE
 {
     type ExecutorNotifier = Box<dyn ExecutorNotified>;
 
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(
+    fn spawn_local<F, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
     ) -> impl Observer<Value = F::Output>
     where
         Self: Sized,
-        F: 'underlying,
+        F: Future + 'underlying,
         /* I am a little uncertain whether this is really required */
         <F as Future>::Output: Unpin,
         <F as Future>::Output: 'static,
@@ -140,13 +139,13 @@ impl<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalE
         self.executor.spawn_local(task)
     }
 
-    async fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(
+    async fn spawn_local_async<F, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
     ) -> impl Observer<Value = F::Output>
     where
         Self: Sized,
-        F: 'underlying,
+        F: Future + 'underlying,
         F::Output: 'static + Unpin,
     { self.executor.spawn_local_async(task).await }
 
@@ -223,13 +222,13 @@ impl UnsafeErasedLocalExecutor {
 impl<'a> SomeLocalExecutor<'a> for UnsafeErasedLocalExecutor {
     type ExecutorNotifier = Box<dyn ExecutorNotified>;
 
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(
+    fn spawn_local<F, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         _task: Task<F, Notifier>,
     ) -> impl Observer<Value = F::Output>
     where
         Self: Sized,
-        F: 'a,
+        F: Future + 'a,
         /* I am a little uncertain whether this is really required */
         <F as Future>::Output: Unpin,
         <F as Future>::Output: 'static,

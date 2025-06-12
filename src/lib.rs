@@ -325,13 +325,13 @@ pub trait SomeLocalExecutor<'future> {
     - `task`: The task to spawn.
 
     */
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(
+    fn spawn_local<F, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
     ) -> impl Observer<Value = F::Output>
     where
         Self: Sized,
-        F: 'future,
+        F: Future + 'future,
         /* I am a little uncertain whether this is really required */
         <F as Future>::Output: Unpin,
         <F as Future>::Output: 'static;
@@ -341,13 +341,13 @@ pub trait SomeLocalExecutor<'future> {
 
     Like [Self::spawn_local], but some implementors may have a fast path for the async context.
     */
-    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(
+    fn spawn_local_async<F, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
     ) -> impl Future<Output = impl Observer<Value = F::Output>>
     where
         Self: Sized,
-        F: 'future,
+        F: Future + 'future,
         <F as Future>::Output: 'static + Unpin;
 
     /**
@@ -414,13 +414,13 @@ pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor<'tasks> {}
 impl<'future> SomeLocalExecutor<'future> for Infallible {
     type ExecutorNotifier = Infallible;
 
-    fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(
+    fn spawn_local<F, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         _task: Task<F, Notifier>,
     ) -> impl Observer<Value = F::Output>
     where
         Self: Sized,
-        F: 'future,
+        F: Future + 'future,
         <F as Future>::Output: Unpin,
         <F as Future>::Output: 'static,
     {
@@ -430,13 +430,13 @@ impl<'future> SomeLocalExecutor<'future> for Infallible {
         }
     }
 
-    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(
+    fn spawn_local_async<F, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         _task: Task<F, Notifier>,
     ) -> impl Future<Output = impl Observer<Value = F::Output>>
     where
         Self: Sized,
-        F: 'future,
+        F: Future + 'future,
         <F as Future>::Output: 'static,
     {
         #[allow(unreachable_code)]
