@@ -151,6 +151,14 @@ struct TaskMetadata {
     poll_after: crate::sys::Instant,
 }
 
+/// Grouped mutable references to reduce parameter count in common_poll function
+struct TaskState<'a, F, N> {
+    sender: &'a mut ObserverSender<F, N>,
+    label: &'a mut Option<String>,
+    cancellation: &'a mut Option<InFlightTaskCancellation>,
+    executor: &'a mut Option<Box<dyn SomeExecutor<ExecutorNotifier = Infallible>>>,
+}
+
 /// A unique identifier for a task.
 ///
 /// `TaskID` provides a way to uniquely identify and track tasks throughout their lifecycle.
@@ -992,10 +1000,7 @@ impl<F: Future> Task<F, Infallible> {
 
 fn common_poll<'l, F, N, L>(
     future: Pin<&mut F>,
-    sender: &mut ObserverSender<F::Output, N>,
-    label: &mut Option<String>,
-    cancellation: &mut Option<InFlightTaskCancellation>,
-    executor: &mut Option<Box<dyn SomeExecutor<ExecutorNotifier = Infallible>>>,
+    state: TaskState<'_, F::Output, N>,
     local_executor: Option<&mut L>,
     metadata: TaskMetadata,
     cx: &mut Context,
@@ -1009,7 +1014,7 @@ where
         metadata.poll_after <= crate::sys::Instant::now(),
         "Conforming executors should not poll tasks before the poll_after time."
     );
-    if sender.observer_cancelled() {
+    if state.sender.observer_cancelled() {
         //we don't really need to notify the observer here.  Also the notifier will run upon drop.
         return Poll::Ready(());
     }
@@ -1017,14 +1022,14 @@ where
     unsafe {
         TASK_LABEL.with_mut(|l| {
             *l = Some(
-                label
+                state.label
                     .take()
                     .expect("Label not set (is task being polled already?)"),
             );
         });
         IS_CANCELLED.with_mut(|c| {
             *c = Some(
-                cancellation
+                state.cancellation
                     .take()
                     .expect("Cancellation not set (is task being polled already?)"),
             );
@@ -1036,7 +1041,7 @@ where
             *i = Some(metadata.task_id);
         });
         TASK_EXECUTOR.with_mut(|e| {
-            *e = Some(executor.take());
+            *e = Some(state.executor.take());
         });
         if let Some(local_executor) = local_executor {
             let mut erased_value_executor = Box::new(
@@ -1055,11 +1060,11 @@ where
     unsafe {
         TASK_LABEL.with_mut(|l| {
             let read_label = l.take().expect("Label not set");
-            *label = Some(read_label);
+            *state.label = Some(read_label);
         });
         IS_CANCELLED.with_mut(|c| {
             let read_cancellation = c.take().expect("Cancellation not set");
-            *cancellation = Some(read_cancellation);
+            *state.cancellation = Some(read_cancellation);
         });
         TASK_PRIORITY.with_mut(|p| {
             *p = None;
@@ -1069,7 +1074,7 @@ where
         });
         TASK_EXECUTOR.with_mut(|e| {
             let read_executor = e.take().expect("Executor not set");
-            *executor = read_executor
+            *state.executor = read_executor
         });
         TASK_LOCAL_EXECUTOR.with_borrow_mut(|e| {
             *e = None;
@@ -1077,7 +1082,7 @@ where
     }
     match r {
         Poll::Ready(r) => {
-            sender.send(r);
+            state.sender.send(r);
             Poll::Ready(())
         }
         Poll::Pending => Poll::Pending,
@@ -1130,12 +1135,15 @@ where
             task_id,
             poll_after,
         };
+        let state = TaskState {
+            sender: sender.get_mut(),
+            label: label.get_mut(),
+            cancellation: cancellation.get_mut(),
+            executor: executor.get_mut(),
+        };
         common_poll(
             future,
-            sender.get_mut(),
-            label.get_mut(),
-            cancellation.get_mut(),
-            executor.get_mut(),
+            state,
             local_executor,
             metadata,
             cx,
@@ -1197,12 +1205,15 @@ where
             task_id,
             poll_after,
         };
+        let state = TaskState {
+            sender: sender.get_mut(),
+            label: label.get_mut(),
+            cancellation: cancellation.get_mut(),
+            executor: &mut some_executor,
+        };
         common_poll(
             future,
-            sender.get_mut(),
-            label.get_mut(),
-            cancellation.get_mut(),
-            &mut some_executor,
+            state,
             Some(executor),
             metadata,
             cx,
