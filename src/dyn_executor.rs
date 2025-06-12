@@ -1,4 +1,4 @@
-//SPDX-License-Identifier: MIT OR Apache-2.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 use crate::dyn_observer::DowncastObserver;
 use crate::observer::{ExecutorNotified, FinishedObservation, Observer, ObserverNotified};
