@@ -116,6 +116,34 @@ type BoxedSendObserverNotifier = Box<dyn ObserverNotified<dyn Any + Send> + Send
 /// Type alias for a Task that can be used with object-safe spawning
 type ObjSafeTask = Task<BoxedSendFuture, BoxedSendObserverNotifier>;
 
+/// Type alias for the result of spawning a task onto an executor
+/// Returns a tuple of (SpawnedTask, TypedObserver)
+type SpawnResult<F, N, Executor> = (
+    SpawnedTask<F, N, Executor>,
+    TypedObserver<<F as Future>::Output, <Executor as SomeExecutor>::ExecutorNotifier>,
+);
+
+/// Type alias for the result of spawning a task onto a local executor
+/// Returns a tuple of (SpawnedLocalTask, TypedObserver)
+type SpawnLocalResult<'a, F, N, Executor> = (
+    SpawnedLocalTask<F, N, Executor>,
+    TypedObserver<<F as Future>::Output, <Executor as SomeLocalExecutor<'a>>::ExecutorNotifier>,
+);
+
+/// Type alias for the result of spawning a task using object-safe method
+/// Returns a tuple with a boxed executor notifier
+type SpawnObjSafeResult<F, N, Executor> = (
+    SpawnedTask<F, N, Executor>,
+    TypedObserver<<F as Future>::Output, Box<dyn ExecutorNotified + Send>>,
+);
+
+/// Type alias for the result of spawning a local task using object-safe method
+/// Returns a tuple with a boxed executor notifier
+type SpawnLocalObjSafeResult<F, N, Executor> = (
+    SpawnedLocalTask<F, N, Executor>,
+    TypedObserver<<F as Future>::Output, Box<dyn ExecutorNotified>>,
+);
+
 /// Task metadata and state to reduce parameter count in common_poll function
 struct TaskMetadata {
     priority: Priority,
@@ -717,10 +745,7 @@ impl<F: Future, N> Task<F, N> {
     pub fn spawn<Executor: SomeExecutor>(
         mut self,
         executor: &mut Executor,
-    ) -> (
-        SpawnedTask<F, N, Executor>,
-        TypedObserver<F::Output, Executor::ExecutorNotifier>,
-    ) {
+    ) -> SpawnResult<F, N, Executor> {
         let cancellation = InFlightTaskCancellation::default();
         let some_notifier: Option<Executor::ExecutorNotifier> = executor.executor_notifier();
         let task_id = self.task_id();
@@ -802,10 +827,7 @@ impl<F: Future, N> Task<F, N> {
     pub fn spawn_local<'executor, Executor: SomeLocalExecutor<'executor>>(
         mut self,
         executor: &mut Executor,
-    ) -> (
-        SpawnedLocalTask<F, N, Executor>,
-        TypedObserver<F::Output, Executor::ExecutorNotifier>,
-    ) {
+    ) -> SpawnLocalResult<'executor, F, N, Executor> {
         let cancellation = InFlightTaskCancellation::default();
         let task_id = self.task_id();
         let (sender, receiver) = observer_channel(
@@ -846,10 +868,7 @@ impl<F: Future, N> Task<F, N> {
     pub fn spawn_objsafe<Executor: SomeExecutor>(
         mut self,
         executor: &mut Executor,
-    ) -> (
-        SpawnedTask<F, N, Executor>,
-        TypedObserver<F::Output, Box<dyn ExecutorNotified + Send>>,
-    ) {
+    ) -> SpawnObjSafeResult<F, N, Executor> {
         let cancellation = InFlightTaskCancellation::default();
         let boxed_executor_notifier = executor
             .executor_notifier()
@@ -895,10 +914,7 @@ impl<F: Future, N> Task<F, N> {
     pub fn spawn_local_objsafe<'executor, Executor: SomeLocalExecutor<'executor>>(
         mut self,
         executor: &mut Executor,
-    ) -> (
-        SpawnedLocalTask<F, N, Executor>,
-        TypedObserver<F::Output, Box<dyn ExecutorNotified>>,
-    ) {
+    ) -> SpawnLocalObjSafeResult<F, N, Executor> {
         let cancellation = InFlightTaskCancellation::default();
         let task_id = self.task_id();
 
