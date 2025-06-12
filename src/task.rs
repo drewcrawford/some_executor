@@ -1,5 +1,89 @@
 //SPDX-License-Identifier: MIT OR Apache-2.0
 
+//! Task management and execution primitives for the some_executor framework.
+//!
+//! This module provides the core types and traits for creating, configuring, and managing
+//! asynchronous tasks within the executor ecosystem. Tasks are the fundamental unit of
+//! asynchronous work that executors poll to completion.
+//!
+//! # Overview
+//!
+//! The task system is built around several key concepts:
+//!
+//! - **[`Task`]**: A top-level future with metadata like labels, priorities, and hints
+//! - **[`SpawnedTask`]/[`SpawnedLocalTask`]**: Tasks that have been spawned onto an executor
+//! - **[`TaskID`]**: Unique identifiers for tracking tasks across the system
+//! - **[`Configuration`]**: Runtime hints and scheduling preferences for tasks
+//!
+//! # Task Lifecycle
+//!
+//! 1. **Creation**: Tasks are created with a future, label, and configuration
+//! 2. **Spawning**: Tasks are spawned onto an executor, producing a spawned task and observer
+//! 3. **Polling**: The executor polls the spawned task until completion
+//! 4. **Completion**: The task's result is sent to any attached observers
+//!
+//! # Examples
+//!
+//! ## Basic Task Creation and Spawning
+//!
+//! ```
+//! use some_executor::task::{Task, Configuration};
+//! use some_executor::current_executor::current_executor;
+//! use some_executor::SomeExecutor;
+//! use some_executor::observer::Observer;
+//!
+//! # async fn example() {
+//! let task = Task::without_notifications(
+//!     "my-task".to_string(),
+//!     async { 
+//!         println!("Hello from task!");
+//!         42
+//!     },
+//!     Configuration::default()
+//! );
+//!
+//! let mut executor = current_executor();
+//! let observer = executor.spawn(task).detach();
+//! 
+//! // Task runs asynchronously
+//! # }
+//! ```
+//!
+//! ## Task Configuration
+//!
+//! ```
+//! use some_executor::task::{Task, ConfigurationBuilder};
+//! use some_executor::hint::Hint;
+//! use some_executor::Priority;
+//!
+//! # async fn example() {
+//! let config = ConfigurationBuilder::new()
+//!     .hint(Hint::CPU)
+//!     .priority(Priority::unit_test())
+//!     .build();
+//!
+//! let task = Task::without_notifications(
+//!     "high-priority-cpu".to_string(),
+//!     async {
+//!         // Some CPU-intensive operation
+//!         let mut sum = 0u64;
+//!         for i in 0..1000000 {
+//!             sum += i;
+//!         }
+//!     },
+//!     config
+//! );
+//! # }
+//! ```
+//!
+//! ## Task-Local Variables
+//!
+//! Tasks have access to task-local variables that provide context during execution.
+//! * [`TASK_LABEL`] - The task's label
+//! * [`TASK_ID`] - The task's unique identifier
+//! * [`IS_CANCELLED`] - Cancellation status
+//!
+
 use crate::dyn_observer_notified::ObserverNotifiedErased;
 use crate::hint::Hint;
 use crate::local::UnsafeErasedLocalExecutor;
@@ -18,29 +102,72 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-/**
-A task identifier.
-
-This is a unique identifier for a task.
-*/
+/// A unique identifier for a task.
+///
+/// `TaskID` provides a way to uniquely identify and track tasks throughout their lifecycle.
+/// Each task is assigned a unique ID when created, which remains constant even as the task
+/// moves between executors or changes state.
+///
+/// Task IDs are globally unique within a process and are generated using an atomic counter,
+/// ensuring thread-safe ID allocation.
+///
+/// # Examples
+///
+/// ```
+/// use some_executor::task::{Task, TaskID, Configuration};
+///
+/// let task = Task::without_notifications(
+///     "example".to_string(),
+///     async { 42 },
+///     Configuration::default()
+/// );
+///
+/// let id = task.task_id();
+/// 
+/// // Task IDs can be converted to/from u64 for serialization
+/// let id_value = id.to_u64();
+/// let restored_id = TaskID::from_u64(id_value);
+/// assert_eq!(id, restored_id);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TaskID(u64);
 
 impl TaskID {
-    /**
-    Creates a task ID from an opaque u64.
-
-    The only valid value comes from a previous call to [TaskID::to_u64].
-    */
+    /// Creates a task ID from a u64 value.
+    ///
+    /// This method is primarily intended for deserialization or restoring task IDs
+    /// that were previously obtained via [`to_u64`](Self::to_u64).
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - A u64 value representing a task ID
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::TaskID;
+    ///
+    /// let id = TaskID::from_u64(12345);
+    /// assert_eq!(id.to_u64(), 12345);
+    /// ```
     pub fn from_u64(id: u64) -> Self {
         TaskID(id)
     }
 
-    /**
-    Converts the task ID to an opaque u64.
-
-    The only valid use of this value is to pass it to [TaskID::from_u64].
-    */
+    /// Converts the task ID to a u64 value.
+    ///
+    /// This method is useful for serialization, logging, or any scenario where
+    /// you need to represent the task ID as a primitive value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::TaskID;
+    ///
+    /// let id = TaskID::from_u64(42);
+    /// let value = id.to_u64();
+    /// assert_eq!(value, 42);
+    /// ```
     pub fn to_u64(self) -> u64 {
         self.0
     }
@@ -54,11 +181,63 @@ impl<F: Future, N> From<&Task<F, N>> for TaskID {
 
 static TASK_IDS: AtomicU64 = AtomicU64::new(0);
 
-/**
-A top-level future.
-
-The Task contains information that can be useful to an executor when deciding how to run the future.
-*/
+/// A top-level future with associated metadata for execution.
+///
+/// `Task` wraps a future with additional information that helps executors make
+/// scheduling decisions and provides context during execution. Unlike raw futures,
+/// tasks carry metadata such as:
+///
+/// - A human-readable label for debugging and monitoring
+/// - Execution hints (e.g., whether the task will block)
+/// - Priority information for scheduling
+/// - Optional notification callbacks for completion
+/// - A unique task ID for tracking
+///
+/// # Type Parameters
+///
+/// * `F` - The underlying future type
+/// * `N` - The notification type (use `Infallible` if no notifications are needed)
+///
+/// # Examples
+///
+/// ## Creating a simple task
+///
+/// ```
+/// use some_executor::task::{Task, Configuration};
+/// use std::convert::Infallible;
+///
+/// let task: Task<_, Infallible> = Task::without_notifications(
+///     "fetch-data".to_string(),
+///     async {
+///         // Simulate fetching data
+///         "data from server"
+///     },
+///     Configuration::default()
+/// );
+/// ```
+///
+/// ## Creating a task with notifications
+///
+/// ```
+/// use some_executor::task::{Task, Configuration};
+/// use some_executor::observer::ObserverNotified;
+///
+/// # struct MyNotifier;
+/// # impl ObserverNotified<String> for MyNotifier {
+/// #     fn notify(&mut self, value: &String) {}
+/// # }
+/// let notifier = MyNotifier;
+///
+/// let task = Task::with_notifications(
+///     "process-request".to_string(),
+///     async {
+///         // Process and return result
+///         "processed".to_string()
+///     },
+///     Configuration::default(),
+///     Some(notifier)
+/// );
+/// ```
 #[derive(Debug)]
 #[must_use]
 pub struct Task<F, N>
@@ -74,11 +253,31 @@ where
     task_id: TaskID,
 }
 
-/**
-A task suitable for spawning.
-
-Executors convert [Task] into this type in order to poll the future.
-*/
+/// A task that has been spawned onto an executor and is ready to be polled.
+///
+/// `SpawnedTask` represents a task that has been submitted to an executor. It contains
+/// the original future along with all the metadata and infrastructure needed for the
+/// executor to poll it to completion.
+///
+/// This type implements `Future`, allowing executors to poll it directly. During polling,
+/// it manages task-local variables and sends the result to any attached observers upon
+/// completion.
+///
+/// # Type Parameters
+///
+/// * `F` - The underlying future type
+/// * `ONotifier` - The observer notification type for task completion
+/// * `Executor` - The executor type that spawned this task
+///
+/// # Task-Local Context
+///
+/// When polled, this task automatically sets up task-local variables that the future
+/// can access:
+/// - [`TASK_LABEL`] - The task's label
+/// - [`TASK_ID`] - The task's unique identifier
+/// - [`TASK_PRIORITY`] - The task's priority
+/// - [`IS_CANCELLED`] - Cancellation status
+/// - [`TASK_EXECUTOR`] - Reference to the executor
 pub struct SpawnedTask<F, ONotifier, Executor>
 where
     F: Future,
@@ -96,23 +295,51 @@ where
     task_id: TaskID,    //boring
 }
 
-/**
-A task suitable for spawning.
-
-Executors convert [Task] into this type in order to poll the future.
-
-# Design note
-
-[SpawnedTask] has an embedded copy of the executor. This is fine for that type, since shared executors
-necessarily involve some nice owned type, like a channel or `Arc<Mutex>`.
-
-[SomeLocalExecutor] is quite different, and may be implemented as a reference to a local executor.  A few issues
-with this, the big one is that we want to spawn with `&mut Executor`, but if tasks embed some kind of &Executor,
-we can't do that.
-
-Instead what we need to do is inject the executor on each poll, which means that the task itself cannot be a future.
-
-*/
+/// A task that has been spawned onto a local executor.
+///
+/// `SpawnedLocalTask` is similar to [`SpawnedTask`] but designed for executors that
+/// are not `Send` and are tied to a specific thread. Unlike `SpawnedTask`, this type
+/// does not implement `Future` directly because local executors need to be injected
+/// during each poll operation.
+///
+/// # Type Parameters
+///
+/// * `F` - The underlying future type
+/// * `ONotifier` - The observer notification type for task completion
+/// * `Executor` - The local executor type that spawned this task
+///
+/// # Design Note
+///
+/// Unlike [`SpawnedTask`] which embeds a copy of the executor, `SpawnedLocalTask` only
+/// stores a `PhantomData` marker. This is because local executors may be implemented
+/// as references that cannot be stored. Instead, the executor must be provided explicitly
+/// when polling the task.
+///
+/// # Task-Local Context
+///
+/// When polled via [`poll`](SpawnedLocalTask::poll), this task sets up the same task-local
+/// variables as [`SpawnedTask`], with the addition of:
+/// - [`TASK_LOCAL_EXECUTOR`] - Reference to the local executor
+///
+/// # Examples
+///
+/// Local tasks must be polled explicitly with a reference to their executor:
+///
+/// ```no_run
+/// # use std::convert::Infallible;
+/// use some_executor::task::SpawnedLocalTask;
+/// # use std::task::Context;
+/// # type MyLocalExecutor = Infallible;
+/// # type MyFuture = std::future::Ready<()>;
+/// # type MyNotifier = std::convert::Infallible;
+/// # let mut spawned: SpawnedLocalTask<MyFuture, MyNotifier, MyLocalExecutor> = todo!();
+/// # let mut executor: MyLocalExecutor = todo!();
+/// # let mut context: Context = todo!();
+/// use std::pin::Pin;
+///
+/// // Poll the local task with its executor
+/// let poll_result = Pin::new(&mut spawned).poll(&mut context, &mut executor, None);
+/// ```
 pub struct SpawnedLocalTask<F, ONotifier, Executor>
 where
     F: Future,
@@ -131,14 +358,22 @@ where
 }
 
 impl<F: Future, ONotifier, ENotifier> SpawnedTask<F, ONotifier, ENotifier> {
+    /// Returns the execution hint for this spawned task.
     pub fn hint(&self) -> Hint {
         self.hint
     }
 
+    /// Returns the label of this spawned task.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called while the task is being polled, as the label is temporarily
+    /// moved into task-local storage during polling.
     pub fn label(&self) -> &str {
         self.label.as_ref().expect("Future is polling")
     }
 
+    /// Returns the priority of this spawned task.
     pub fn priority(&self) -> priority::Priority {
         self.priority
     }
@@ -147,28 +382,44 @@ impl<F: Future, ONotifier, ENotifier> SpawnedTask<F, ONotifier, ENotifier> {
     //     self.task.get_future().get_future().get_val(|cancellation| cancellation.clone())
     // }
 
+    /// Returns the earliest time this task should be polled.
+    ///
+    /// Executors should respect this time and not poll the task before it.
     pub fn poll_after(&self) -> crate::sys::Instant {
         self.poll_after
     }
 
+    /// Returns the unique identifier for this spawned task.
     pub fn task_id(&self) -> TaskID {
         self.task_id
     }
 
+    /// Consumes the spawned task and returns the underlying future.
+    ///
+    /// This is useful if you need to extract the future from the spawned task wrapper,
+    /// but note that you'll lose the task metadata and observer infrastructure.
     pub fn into_future(self) -> F {
         self.task
     }
 }
 
 impl<'executor, F: Future, ONotifier, Executor> SpawnedLocalTask<F, ONotifier, Executor> {
+    /// Returns the execution hint for this spawned local task.
     pub fn hint(&self) -> Hint {
         self.hint
     }
 
+    /// Returns the label of this spawned local task.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called while the task is being polled, as the label is temporarily
+    /// moved into task-local storage during polling.
     pub fn label(&self) -> &str {
         self.label.as_ref().expect("Future is polling")
     }
 
+    /// Returns the priority of this spawned local task.
     pub fn priority(&self) -> priority::Priority {
         self.priority
     }
@@ -177,21 +428,44 @@ impl<'executor, F: Future, ONotifier, Executor> SpawnedLocalTask<F, ONotifier, E
     //     self.task.get_future().get_future().get_val(|cancellation| cancellation.clone())
     // }
 
+    /// Returns the earliest time this task should be polled.
+    ///
+    /// Executors should respect this time and not poll the task before it.
     pub fn poll_after(&self) -> crate::sys::Instant {
         self.poll_after
     }
 
+    /// Returns the unique identifier for this spawned local task.
     pub fn task_id(&self) -> TaskID {
         self.task_id
     }
 
+    /// Consumes the spawned local task and returns the underlying future.
+    ///
+    /// This is useful if you need to extract the future from the spawned task wrapper,
+    /// but note that you'll lose the task metadata and observer infrastructure.
     pub fn into_future(self) -> F {
         self.task
     }
 }
-/**
-Provides information about the cancellation status of the current task.
-*/
+/// Provides information about the cancellation status of a running task.
+///
+/// `InFlightTaskCancellation` allows tasks to check if they have been cancelled
+/// and optionally exit early. This is particularly useful for long-running tasks
+/// that should stop processing when no longer needed.
+///
+/// # Examples
+///
+/// Tasks can check their cancellation status via the task-local variable:
+///
+/// ```no_run
+/// // Inside a task's future, IS_CANCELLED can be accessed:
+///  use some_executor::task::IS_CANCELLED;
+///  if IS_CANCELLED.with(|c| c.expect("No task").is_cancelled()) {
+///      // Clean up and exit early
+///      return;
+///  }
+/// ```
 #[derive(Debug)]
 pub struct InFlightTaskCancellation(Arc<AtomicBool>);
 
@@ -205,13 +479,25 @@ impl InFlightTaskCancellation {
         self.0.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /**
-    Returns true if the task has been cancelled.
-
-    Code inside the task may wish to check this and return early.
-
-    It is not required that anyone check this value.
-    */
+    /// Returns `true` if the task has been cancelled.
+    ///
+    /// Tasks can use this method to check if they should stop processing and return early.
+    /// Checking for cancellation is optional - tasks that don't check will continue to
+    /// run until completion.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// // Inside a long-running task:
+    /// # use some_executor::task::IS_CANCELLED;
+    /// for i in 0..1000 {
+    ///      if IS_CANCELLED.with(|c| c.expect("No task").is_cancelled() ) {
+    ///          println!("Task cancelled at iteration {}", i);
+    ///          break;
+    ///      }
+    ///      // Do some work...
+    ///  }
+    /// ```
     pub fn is_cancelled(&self) -> bool {
         self.0.load(std::sync::atomic::Ordering::Relaxed)
     }
@@ -281,42 +567,132 @@ impl<F: Future, N> Task<F, N> {
         }
     }
 
+    /// Returns the execution hint for this task.
+    ///
+    /// Hints provide guidance to executors about the expected behavior of the task,
+    /// such as whether it will block or complete quickly.
     pub fn hint(&self) -> Hint {
         self.hint
     }
 
+    /// Returns the human-readable label for this task.
+    ///
+    /// Labels are useful for debugging, monitoring, and identifying tasks in logs.
     pub fn label(&self) -> &str {
         self.label.as_ref()
     }
 
+    /// Returns the priority of this task.
+    ///
+    /// Priority influences scheduling decisions when multiple tasks are ready to run.
     pub fn priority(&self) -> priority::Priority {
         self.priority
     }
 
-    /**
-    The time after which the task should be polled.
-
-    Executors must not poll the task before this time.  An executor may choose to implement this in a variety of
-    ways, such as using a timer, sleeping the thread, etc.
-    */
+    /// Returns the earliest time this task should be polled.
+    ///
+    /// Executors must not poll the task before this time. This can be used to
+    /// implement delayed execution or rate limiting.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, ConfigurationBuilder};
+    /// use some_executor::Instant;
+    /// use std::time::Duration;
+    ///
+    /// let config = ConfigurationBuilder::new()
+    ///     .poll_after(Instant::now() + Duration::from_secs(5))
+    ///     .build();
+    ///
+    /// let task = Task::without_notifications(
+    ///     "delayed-task".to_string(),
+    ///     async { println!("This runs after 5 seconds"); },
+    ///     config
+    /// );
+    /// ```
     pub fn poll_after(&self) -> crate::sys::Instant {
         self.poll_after
     }
 
+    /// Returns the unique identifier for this task.
+    ///
+    /// Task IDs remain constant throughout the task's lifecycle and can be used
+    /// for tracking, debugging, and correlation.
     pub fn task_id(&self) -> TaskID {
         self.task_id
     }
 
+    /// Consumes the task and returns the underlying future.
+    ///
+    /// This is useful when you need direct access to the future, but note that
+    /// you'll lose access to the task's metadata.
     pub fn into_future(self) -> F {
         self.future
     }
 
-    /**
-    Spawns the task onto the executor.
-
-    When using this method, the TASK_LOCAL_EXECUTOR will be set to None.
-    To spawn a task onto a local executor instead, use [Task::spawn_local].
-    */
+    /// Spawns the task onto an executor.
+    ///
+    /// This method transfers ownership of the task to the executor, which will poll it
+    /// to completion. It returns a tuple containing:
+    ///
+    /// 1. A [`SpawnedTask`] that can be polled by the executor
+    /// 2. A [`TypedObserver`] that can be used to await or check the task's completion
+    ///
+    /// # Arguments
+    ///
+    /// * `executor` - The executor that will run this task
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::any::Any;
+    /// # use std::convert::Infallible;
+    /// use std::future::Future;
+    /// use std::pin::Pin;
+    /// use some_executor::observer::{FinishedObservation, Observer, ObserverNotified, TypedObserver};
+    /// use some_executor::task::{Task, Configuration};
+    /// use some_executor::SomeExecutor;
+    ///
+    /// # struct MyExecutor;
+    /// # impl SomeExecutor for MyExecutor {
+    /// #     type ExecutorNotifier = std::convert::Infallible;
+    /// #     fn spawn<F, N>(&mut self, task: Task<F, N>) -> impl some_executor::observer::Observer<Value = F::Output> 
+    /// #     where F: std::future::Future + Send + 'static, N: some_executor::observer::ObserverNotified<F::Output> + Send + 'static, F::Output: Send + 'static
+    /// #     { todo!() as TypedObserver::<F::Output, Infallible> }
+    /// #     fn spawn_async<F, N>(&mut self, task: Task<F, N>) -> impl std::future::Future<Output = impl some_executor::observer::Observer<Value = F::Output>>
+    /// #     where F: std::future::Future + Send + 'static, N: some_executor::observer::ObserverNotified<F::Output> + Send + 'static, F::Output: Send + 'static  
+    /// #     { async { todo!() as TypedObserver::<F::Output, Infallible>} }
+    /// #     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> { None }
+    /// #     fn clone_box(&self) -> Box<dyn SomeExecutor<ExecutorNotifier = Self::ExecutorNotifier>> { todo!() }
+    ///
+    /// #     fn spawn_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any + Send>, Output=FinishedObservation<Box<dyn Any + Send>>> + Send>> + 's> {
+    /// #        todo!()
+    /// #     }
+    ///
+    /// #     fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + 'static + Send>> + 'static + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Observer<Value=Box<dyn Any + Send>, Output=FinishedObservation<Box<dyn Any + Send>>> + Send> {
+    /// #         todo!()
+    /// #     }
+    /// # }
+    /// # async fn example() {
+    /// let task = Task::without_notifications(
+    ///     "compute".to_string(),
+    ///     async { 2 + 2 },
+    ///     Configuration::default()
+    /// );
+    ///
+    /// let mut executor = MyExecutor;
+    /// let (spawned, observer) = task.spawn(&mut executor);
+    ///
+    /// // The task is now owned by the executor
+    /// // Use the observer to check completion
+    /// # }
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// When using this method, the `TASK_LOCAL_EXECUTOR` will be set to `None`.
+    /// To spawn a task onto a local executor instead, use [`spawn_local`](Self::spawn_local).
     pub fn spawn<Executor: SomeExecutor>(
         mut self,
         executor: &mut Executor,
@@ -349,9 +725,59 @@ impl<F: Future, N> Task<F, N> {
         (spawned_task, receiver)
     }
 
-    /**
-    Spawns the task onto a local executor
-    */
+    /// Spawns the task onto a local executor.
+    ///
+    /// Local executors are tied to a specific thread and cannot be sent across threads.
+    /// This method is similar to [`spawn`](Self::spawn) but works with executors that
+    /// are not `Send`.
+    ///
+    /// # Arguments
+    ///
+    /// * `executor` - The local executor that will run this task
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// 1. A [`SpawnedLocalTask`] that can be polled by the executor
+    /// 2. A [`TypedObserver`] that can be used to await or check the task's completion
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, Configuration};
+    /// # use some_executor::SomeLocalExecutor;
+    /// # use some_executor::observer::{Observer, ObserverNotified, FinishedObservation, TypedObserver};
+    /// # use std::any::Any;
+    /// # use std::pin::Pin;
+    /// # use std::future::Future;
+    /// # use std::convert::Infallible;
+    /// 
+    /// # struct MyLocalExecutor;
+    /// # impl<'a> SomeLocalExecutor<'a> for MyLocalExecutor {
+    /// #     type ExecutorNotifier = Infallible;
+    /// #     fn spawn_local<F: Future, N: ObserverNotified<F::Output>>(&mut self, task: some_executor::task::Task<F, N>) -> impl Observer<Value = F::Output> where F: 'a, F::Output: 'static { 
+    /// #         todo!() as TypedObserver::<F::Output, Infallible>
+    /// #     }
+    /// #     fn spawn_local_async<F: Future, N: ObserverNotified<F::Output>>(&mut self, task: some_executor::task::Task<F, N>) -> impl Future<Output = impl Observer<Value = F::Output>> where F: 'a, F::Output: 'static { 
+    /// #         async { todo!() as TypedObserver::<F::Output, Infallible> }
+    /// #     }
+    /// #     fn spawn_local_objsafe(&mut self, task: some_executor::task::Task<Pin<Box<dyn Future<Output = Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> { todo!() }
+    /// #     fn spawn_local_objsafe_async<'s>(&'s mut self, task: some_executor::task::Task<Pin<Box<dyn Future<Output = Box<dyn Any>>>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output = Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>> + 's> { Box::new(async { todo!() }) }
+    /// #     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> { None }
+    /// # }
+    /// let mut executor = MyLocalExecutor;
+    ///
+    /// let task = Task::without_notifications(
+    ///     "local-work".to_string(),
+    ///     async { 
+    ///         // Can access thread-local data here
+    ///         println!("Running on the local thread");
+    ///     },
+    ///     Configuration::default()
+    /// );
+    ///
+    /// let (spawned, observer) = task.spawn_local(&mut executor);
+    /// ```
     pub fn spawn_local<'executor, Executor: SomeLocalExecutor<'executor>>(
         mut self,
         executor: &mut Executor,
@@ -765,9 +1191,45 @@ impl
     }
 }
 
-/**
-Information needed to spawn a task.
-*/
+/// Configuration options for spawning a task.
+///
+/// `Configuration` encapsulates the runtime preferences and scheduling hints for a task.
+/// These settings help executors make informed decisions about how and when to run tasks.
+///
+/// # Examples
+///
+/// ## Using the default configuration
+///
+/// ```
+/// use some_executor::task::{Task, Configuration};
+///
+/// let task = Task::without_notifications(
+///     "simple".to_string(),
+///     async { "done" },
+///     Configuration::default()
+/// );
+/// ```
+///
+/// ## Creating a custom configuration
+///
+/// ```
+/// use some_executor::task::{Configuration, ConfigurationBuilder};
+/// use some_executor::hint::Hint;
+/// use some_executor::Priority;
+///
+/// // Build a configuration for a high-priority CPU task
+/// let config = ConfigurationBuilder::new()
+///     .hint(Hint::CPU)
+///     .priority(Priority::unit_test())
+///     .build();
+///
+/// // Or create directly
+/// let config = Configuration::new(
+///     Hint::CPU,
+///     Priority::unit_test(),
+///     some_executor::Instant::now()
+/// );
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Configuration {
     hint: Hint,
@@ -775,9 +1237,30 @@ pub struct Configuration {
     poll_after: crate::sys::Instant,
 }
 
-/**
-A builder for [Configuration].
-*/
+/// A builder for creating [`Configuration`] instances.
+///
+/// `ConfigurationBuilder` provides a fluent API for constructing task configurations
+/// with optional settings. Any unspecified values will use sensible defaults.
+///
+/// # Examples
+///
+/// ```
+/// use some_executor::task::ConfigurationBuilder;
+/// use some_executor::hint::Hint;
+/// use some_executor::Priority;
+/// use some_executor::Instant;
+/// use std::time::Duration;
+///
+/// // Build a configuration with specific settings
+/// let config = ConfigurationBuilder::new()
+///     .hint(Hint::CPU)
+///     .priority(Priority::unit_test())
+///     .poll_after(Instant::now() + Duration::from_secs(2))
+///     .build();
+///
+/// // Use default builder - all fields will have default values
+/// let default_config = ConfigurationBuilder::default().build();
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ConfigurationBuilder {
     hint: Option<Hint>,
@@ -786,6 +1269,9 @@ pub struct ConfigurationBuilder {
 }
 
 impl ConfigurationBuilder {
+    /// Creates a new `ConfigurationBuilder` with no values set.
+    ///
+    /// All fields will be `None` until explicitly set via the builder methods.
     pub fn new() -> Self {
         ConfigurationBuilder {
             hint: None,
@@ -794,33 +1280,86 @@ impl ConfigurationBuilder {
         }
     }
 
-    /**
-    Provide a hint about the runtime characteristics of the future.
-    */
-
+    /// Sets the execution hint for the task.
+    ///
+    /// Hints provide guidance to executors about the expected behavior of the task,
+    /// allowing for more efficient scheduling decisions.
+    ///
+    /// # Arguments
+    ///
+    /// * `hint` - The execution hint for the task
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::ConfigurationBuilder;
+    /// use some_executor::hint::Hint;
+    ///
+    /// let config = ConfigurationBuilder::new()
+    ///     .hint(Hint::IO)
+    ///     .build();
+    /// ```
     pub fn hint(mut self, hint: Hint) -> Self {
         self.hint = Some(hint);
         self
     }
 
-    /**
-    Provide a priority for the future.
-
-    See the [Priority] type for details.
-    */
+    /// Sets the priority for the task.
+    ///
+    /// Priority influences scheduling when multiple tasks are ready to run.
+    /// Higher priority tasks are generally scheduled before lower priority ones.
+    ///
+    /// # Arguments
+    ///
+    /// * `priority` - The priority level for the task
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::ConfigurationBuilder;
+    /// use some_executor::Priority;
+    ///
+    /// let config = ConfigurationBuilder::new()
+    ///     .priority(Priority::unit_test())
+    ///     .build();
+    /// ```
     pub fn priority(mut self, priority: priority::Priority) -> Self {
         self.priority = Some(priority);
         self
     }
 
-    /**
-    Provide a time after which the future should be polled.
-    */
+    /// Sets the earliest time the task should be polled.
+    ///
+    /// This can be used to delay task execution or implement scheduled tasks.
+    /// Executors will not poll the task before this time.
+    ///
+    /// # Arguments
+    ///
+    /// * `poll_after` - The instant after which the task can be polled
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::ConfigurationBuilder;
+    /// use some_executor::Instant;
+    /// use std::time::Duration;
+    ///
+    /// // Delay task execution by 5 seconds
+    /// let config = ConfigurationBuilder::new()
+    ///     .poll_after(Instant::now() + Duration::from_secs(5))
+    ///     .build();
+    /// ```
     pub fn poll_after(mut self, poll_after: crate::sys::Instant) -> Self {
         self.poll_after = Some(poll_after);
         self
     }
 
+    /// Builds the final [`Configuration`] instance.
+    ///
+    /// Any unset values will use their defaults:
+    /// - `hint`: `Hint::default()`
+    /// - `priority`: `Priority::Unknown`
+    /// - `poll_after`: `Instant::now()`
     pub fn build(self) -> Configuration {
         Configuration {
             hint: self.hint.unwrap_or_else(|| Hint::default()),
@@ -833,6 +1372,31 @@ impl ConfigurationBuilder {
 }
 
 impl Configuration {
+    /// Creates a new `Configuration` with the specified values.
+    ///
+    /// This is an alternative to using [`ConfigurationBuilder`] when you have all
+    /// values available upfront.
+    ///
+    /// # Arguments
+    ///
+    /// * `hint` - The execution hint for the task
+    /// * `priority` - The priority level for the task
+    /// * `poll_after` - The earliest time the task should be polled
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::Configuration;
+    /// use some_executor::hint::Hint;
+    /// use some_executor::Priority;
+    /// use some_executor::Instant;
+    ///
+    /// let config = Configuration::new(
+    ///     Hint::CPU,
+    ///     Priority::unit_test(),
+    ///     Instant::now()
+    /// );
+    /// ```
     pub fn new(hint: Hint, priority: priority::Priority, poll_after: crate::sys::Instant) -> Self {
         Configuration {
             hint,
@@ -842,22 +1406,48 @@ impl Configuration {
     }
 }
 
-/**
-ObjSafe type-erased wrapper for [SpawnedLocalTask].
-*/
+/// Object-safe type-erased wrapper for [`SpawnedLocalTask`].
+///
+/// This trait allows executors to work with spawned local tasks without knowing their
+/// concrete future type. It provides all the essential operations needed to poll and
+/// query task metadata in a type-erased manner.
+///
+/// # Usage
+///
+/// This trait is primarily used internally by executors that need to store heterogeneous
+/// collections of local tasks. The trait methods mirror those of [`SpawnedLocalTask`].
+///
+/// # Implementation
+///
+/// This trait is automatically implemented for all [`SpawnedLocalTask`] instances.
 pub trait DynLocalSpawnedTask<Executor> {
+    /// Polls the task with its associated executor.
+    ///
+    /// # Arguments
+    ///
+    /// * `cx` - The waker context for async execution
+    /// * `executor` - The local executor that owns this task
+    /// * `some_executor` - Optional executor for spawning new tasks from within this task
     fn poll<'executor>(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         executor: &'executor mut Executor,
         some_executor: Option<Box<(dyn SomeExecutor<ExecutorNotifier = Infallible> + 'static)>>,
     ) -> std::task::Poll<()>;
+    
+    /// Returns the earliest time this task should be polled.
     fn poll_after(&self) -> crate::sys::Instant;
+    
+    /// Returns the task's label.
     fn label(&self) -> &str;
 
+    /// Returns the task's unique identifier.
     fn task_id(&self) -> TaskID;
 
+    /// Returns the task's execution hint.
     fn hint(&self) -> Hint;
+    
+    /// Returns the task's priority.
     fn priority(&self) -> priority::Priority;
 }
 
@@ -896,12 +1486,44 @@ where
     }
 }
 
-/**
-ObjSafe type-erased wrapper for [SpawnedTask].
-
-If you have no relevant type parameter, choose [Infallible].
-*/
+/// Object-safe type-erased wrapper for [`SpawnedTask`].
+///
+/// This trait allows executors to work with spawned tasks without knowing their
+/// concrete future type. It provides all the essential operations needed to poll and
+/// query task metadata in a type-erased manner.
+///
+/// # Type Parameters
+///
+/// * `LocalExecutorType` - The type of local executor that may be provided during polling.
+///   Use [`Infallible`] if no local executor is needed.
+///
+/// # Usage
+///
+/// This trait is primarily used internally by executors that need to store heterogeneous
+/// collections of tasks. The trait is `Send + Debug`, making it suitable for multi-threaded
+/// executors.
+///
+/// # Examples
+///
+/// ```
+/// use some_executor::task::DynSpawnedTask;
+/// use std::convert::Infallible;
+///
+/// // Store a collection of type-erased tasks
+/// let tasks: Vec<Box<dyn DynSpawnedTask<Infallible>>> = vec![];
+/// ```
+///
+/// # Implementation
+///
+/// This trait is automatically implemented for all [`SpawnedTask`] instances where the
+/// future and notifier types are `Send`.
 pub trait DynSpawnedTask<LocalExecutorType>: Send + Debug {
+    /// Polls the task, optionally with a local executor context.
+    ///
+    /// # Arguments
+    ///
+    /// * `cx` - The waker context for async execution
+    /// * `local_executor` - Optional local executor for thread-local operations
     fn poll<'l>(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -910,12 +1532,19 @@ pub trait DynSpawnedTask<LocalExecutorType>: Send + Debug {
     where
         LocalExecutorType: SomeLocalExecutor<'l>;
 
+    /// Returns the earliest time this task should be polled.
     fn poll_after(&self) -> crate::sys::Instant;
+    
+    /// Returns the task's label.
     fn label(&self) -> &str;
 
+    /// Returns the task's unique identifier.
     fn task_id(&self) -> TaskID;
 
+    /// Returns the task's execution hint.
     fn hint(&self) -> Hint;
+    
+    /// Returns the task's priority.
     fn priority(&self) -> priority::Priority;
 }
 
@@ -982,9 +1611,39 @@ I suppose we could implement Default with a blank task...
 
  */
 
-/**
-A future that always returns Ready(()).
-*/
+/// A trivial future that completes immediately with `()`.
+///
+/// `DefaultFuture` is useful for creating default task instances or for testing
+/// purposes where you need a simple, non-blocking future.
+///
+/// # Examples
+///
+/// ```
+/// use some_executor::task::{DefaultFuture, Task};
+/// use std::convert::Infallible;
+/// use std::task::Poll;
+/// use std::future::Future;
+///
+/// // DefaultFuture always returns Ready(())
+/// # use std::task::Context;
+/// # use std::pin::Pin;
+/// # fn make_waker() -> std::task::Waker {
+/// #     use std::task::{RawWaker, RawWakerVTable, Waker};
+/// #     unsafe fn no_op(_: *const ()) {}
+/// #     unsafe fn clone(_: *const ()) -> RawWaker {
+/// #         RawWaker::new(std::ptr::null(), &VTABLE)
+/// #     }
+/// #     const VTABLE: RawWakerVTable = RawWakerVTable::new(clone, no_op, no_op, no_op);
+/// #     unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
+/// # }
+/// # let waker = make_waker();
+/// # let mut cx = Context::from_waker(&waker);
+/// let mut future = DefaultFuture;
+/// assert_eq!(Pin::new(&mut future).poll(&mut cx), Poll::Ready(()));
+///
+/// // Can be used to create a default task
+/// let task: Task<DefaultFuture, Infallible> = Task::default();
+/// ```
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub struct DefaultFuture;
 impl Future for DefaultFuture {
