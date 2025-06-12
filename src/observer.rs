@@ -10,35 +10,79 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+/// Represents the state of an observed task.
+///
+/// This enum is returned by [`Observer::observe`] to indicate the current status
+/// of a task being observed. Once a task completes with [`Observation::Ready`],
+/// subsequent observations will return [`Observation::Done`].
+///
+/// # Examples
+///
+/// ```
+/// use some_executor::observer::Observation;
+///
+/// // An observation can be constructed from a value
+/// let obs: Observation<i32> = Observation::from(42);
+/// assert_eq!(obs, Observation::Ready(42));
+///
+/// // Observations can be converted to Option
+/// let ready: Observation<String> = Observation::Ready("hello".to_string());
+/// let opt: Option<String> = ready.into();
+/// assert_eq!(opt, Some("hello".to_string()));
+///
+/// let pending: Observation<String> = Observation::Pending;
+/// let opt: Option<String> = pending.into();
+/// assert_eq!(opt, None);
+/// ```
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Observation<T> {
-    /**
-        The task is pending.
-    */
+    /// The task is still running and has not completed.
     Pending,
-    /**
-        The task is finished.
-    */
+    /// The task has completed with a value.
+    /// 
+    /// This value can only be observed once. After the value is taken,
+    /// subsequent observations will return [`Observation::Done`].
     Ready(T),
-    /**
-        The task was finished, but the value was already observed.
-    */
+    /// The task was previously completed and its value has already been observed.
+    ///
+    /// This state indicates that [`Observation::Ready`] was previously returned
+    /// and the value has been consumed.
     Done,
-    /**
-        The task was cancelled.
-    */
+    /// The task was cancelled before completion.
+    ///
+    /// Cancellation can occur when an [`Observer`] is dropped without calling
+    /// [`Observer::detach`].
     Cancelled,
 }
 
+/// Represents the final state of an observed task.
+///
+/// This enum is returned when awaiting an [`Observer`] as a [`Future`].
+/// Unlike [`Observation`], this only includes terminal states - either
+/// the task completed successfully or was cancelled.
+///
+/// # Examples
+///
+/// ```
+/// # use some_executor::observer::FinishedObservation;
+/// # async fn example() {
+/// # let observer: some_executor::observer::TypedObserver<String, std::convert::Infallible> = todo!();
+/// // When awaiting an observer, you get a FinishedObservation
+/// match observer.await {
+///     FinishedObservation::Ready(value) => {
+///         println!("Task completed with: {}", value);
+///     }
+///     FinishedObservation::Cancelled => {
+///         println!("Task was cancelled");
+///     }
+/// }
+/// # }
+/// ```
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum FinishedObservation<T> {
-    /**
-    The task is finished.
-    */
+    /// The task completed successfully with a value.
     Ready(T),
-    /**
-    The task was cancelled.
-    */
+    /// The task was cancelled before completion.
     Cancelled,
 }
 
@@ -58,29 +102,76 @@ struct Shared<T> {
     in_flight_task_cancellation: InFlightTaskCancellation,
 }
 
-/**
-Observes information about a task.
-
-Dropping the observer requests cancellation.
-
-To detach instead, use [Self::detach].
-
-# Cancellation
-
-Cancellation in some_executor is optimistic.  There are three types:
-
-1.  some_executor itself guarantees that polls that occur logically after the cancellation will not be run.  So this "lightweight cancellation" is free and universal.
-2.  The task may currently be in the process of being polled.  In this case, cancellation depends on how the task itself (that is, futures themselves, async code itself) reacts to cancellation through the `IS_CANCELLED` task local.
-    Task support is sporadic and not guaranteed.
-3.  The executor may support cancellation.  In this case, it may drop the future and not run it again.  This is not guaranteed.
-*/
+/// Provides observation and control over spawned tasks.
+///
+/// An `Observer` allows you to:
+/// - Check the current state of a task without blocking using [`observe`](Self::observe)
+/// - Wait for task completion by awaiting the observer (it implements [`Future`])
+/// - Cancel a task by dropping the observer
+/// - Detach from a task to let it run independently using [`detach`](Self::detach)
+///
+/// # Cancellation
+///
+/// Dropping an observer requests cancellation of the associated task. Cancellation in 
+/// some_executor is optimistic and operates at three levels:
+///
+/// 1. **Lightweight cancellation**: some_executor guarantees that polls occurring logically 
+///    after cancellation will not be run. This is free and universal.
+/// 2. **In-flight cancellation**: If the task is currently being polled, cancellation depends 
+///    on how the task itself reacts to cancellation through the `IS_CANCELLED` task local.
+///    Task support for this is sporadic and not guaranteed.
+/// 3. **Executor cancellation**: The executor may support cancellation by dropping the future 
+///    and not running it again. This is not guaranteed and depends on the executor implementation.
+///
+/// To allow a task to continue running without the observer, use [`detach`](Self::detach).
+///
+/// # Examples
+///
+/// ```
+/// # use some_executor::observer::{Observer, TypedObserver};
+/// # use some_executor::observer::{Observation, FinishedObservation};
+/// # async fn example() {
+/// # let observer: TypedObserver<String, std::convert::Infallible> = todo!();
+/// // Check task state without blocking
+/// match observer.observe() {
+///     Observation::Pending => println!("Task still running"),
+///     Observation::Ready(value) => println!("Task completed: {}", value),
+///     Observation::Done => println!("Value already taken"),
+///     Observation::Cancelled => println!("Task was cancelled"),
+/// }
+///
+/// // Or wait for completion
+/// # let observer: TypedObserver<String, std::convert::Infallible> = todo!();
+/// match observer.await {
+///     FinishedObservation::Ready(value) => println!("Got: {}", value),
+///     FinishedObservation::Cancelled => println!("Cancelled"),
+/// }
+///
+/// // Detach to let task run independently
+/// # let observer: TypedObserver<String, std::convert::Infallible> = todo!();
+/// observer.detach(); // Task continues running
+/// # }
+/// ```
 #[must_use]
 pub trait Observer: 'static + Future<Output = FinishedObservation<Self::Value>> {
+    /// The type of value produced by the observed task.
     type Value;
+    
+    /// Checks the current state of the task without blocking.
+    ///
+    /// This method allows you to inspect the task's progress without waiting.
+    /// Note that [`Observation::Ready`] can only be returned once - subsequent
+    /// calls will return [`Observation::Done`] after the value has been taken.
     fn observe(&self) -> Observation<Self::Value>;
 
+    /// Returns the unique identifier of the observed task.
     fn task_id(&self) -> &TaskID;
 
+    /// Detaches from the task, allowing it to continue running independently.
+    ///
+    /// After calling this method, the task will continue to execute even though
+    /// the observer has been dropped. This prevents the cancellation that would
+    /// normally occur when an observer is dropped.
     fn detach(self)
     where
         Self: Sized,
@@ -89,9 +180,54 @@ pub trait Observer: 'static + Future<Output = FinishedObservation<Self::Value>> 
     }
 }
 
-/**
-A typed observer is an observer that is typed to a specific value.
-*/
+/// A concrete implementation of [`Observer`] for tasks that return a specific type.
+///
+/// `TypedObserver` is the primary way to observe tasks spawned on executors. It provides
+/// both synchronous observation through [`observe`](Self::observe) and asynchronous 
+/// completion through its [`Future`] implementation.
+///
+/// The `ENotifier` type parameter allows executors to receive notifications about
+/// observer lifecycle events (like cancellation requests). Most users can use
+/// [`std::convert::Infallible`] for this parameter if executor notifications aren't needed.
+///
+/// # Examples
+///
+/// ```
+/// # use some_executor::observer::TypedObserver;
+/// # use std::convert::Infallible;
+/// # async fn example() {
+/// # let observer: TypedObserver<i32, Infallible> = todo!();
+/// // Spawn a task and get an observer
+/// // let observer = executor.spawn(task);
+///
+/// // Check status without blocking
+/// use some_executor::observer::Observation;
+/// if let Observation::Ready(value) = observer.observe() {
+///     println!("Task completed with: {}", value);
+/// }
+///
+/// // Or wait for completion
+/// # let observer: TypedObserver<i32, Infallible> = todo!();
+/// let result = observer.await;
+/// println!("Final result: {:?}", result);
+/// # }
+/// ```
+///
+/// # Cancellation
+///
+/// Dropping a `TypedObserver` will request cancellation of the associated task:
+///
+/// ```no_run
+/// # use some_executor::observer::TypedObserver;
+/// # use std::convert::Infallible;
+/// # let observer: TypedObserver<(), Infallible> = todo!();
+/// // This will cancel the task
+/// drop(observer);
+///
+/// // To avoid cancellation, detach the observer
+/// # let observer: TypedObserver<(), Infallible> = todo!();
+/// observer.detach(); // Task continues running
+/// ```
 #[derive(Debug)]
 pub struct TypedObserver<T, ENotifier: ExecutorNotified> {
     shared: Arc<Shared<T>>,
@@ -187,6 +323,26 @@ impl<T, Notifier> Drop for ObserverSender<T, Notifier> {
 }
 
 impl<T, E: ExecutorNotified> TypedObserver<T, E> {
+    /// Checks the current state of the observed task.
+    ///
+    /// This method provides a non-blocking way to check if a task has completed.
+    /// The first call after task completion will return [`Observation::Ready`] with
+    /// the value, and subsequent calls will return [`Observation::Done`].
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use some_executor::observer::TypedObserver;
+    /// # use some_executor::observer::Observation;
+    /// # use std::convert::Infallible;
+    /// # let observer: TypedObserver<String, Infallible> = todo!();
+    /// match observer.observe() {
+    ///     Observation::Pending => println!("Still working..."),
+    ///     Observation::Ready(result) => println!("Got result: {}", result),
+    ///     Observation::Done => println!("Already retrieved the result"),
+    ///     Observation::Cancelled => println!("Task was cancelled"),
+    /// }
+    /// ```
     pub fn observe(&self) -> Observation<T> {
         let mut lock = self.shared.lock.lock().unwrap();
         match *lock {
@@ -200,16 +356,30 @@ impl<T, E: ExecutorNotified> TypedObserver<T, E> {
         }
     }
 
-    /**
-        Returns the task id of the task being observed.
-    */
+    /// Returns the unique identifier of the task being observed.
+    ///
+    /// Each spawned task has a unique [`TaskID`] that can be used for logging,
+    /// debugging, or tracking purposes.
     pub fn task_id(&self) -> &TaskID {
         &self.task_id
     }
 
-    /**
-    Detaches from the active task, allowing it to continue running indefinitely.
-    */
+    /// Detaches from the task, allowing it to continue running independently.
+    ///
+    /// After calling this method, the task will continue to execute even after
+    /// this observer is dropped. This is useful for "fire-and-forget" operations
+    /// where you don't need the task's result and don't want to cancel it.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use some_executor::observer::TypedObserver;
+    /// # use std::convert::Infallible;
+    /// # let observer: TypedObserver<(), Infallible> = todo!();
+    /// // Start a background task
+    /// observer.detach();
+    /// // The task continues running even though we no longer hold the observer
+    /// ```
     pub fn detach(mut self) {
         self.notifier.take();
         self.detached = true;
@@ -236,46 +406,120 @@ where
     }
 }
 
-/**
-Provides inline notifications to a user spawning a task, when the task completes.
-
-The main difference between this and [crate::TypedObserver] is that the observer can be polled to find
-out if the task is done, while the notifier will be run inline when the task completes.
-
-When the task is cancelled, the notifier will be dropped without running.  In this way one can
-also receive inline notifications for cancellation.
-
-# Design
-
-The notifier is used inline in a future, (in a pinned context).  Accordingly, there are two
-possible designs:
-
-1.  Use immutable references to the notifier.  But notifiers may want to have some mutable state,
-    forcing them to figure out interior mutability and synchronization
-2.  Require Unpin, allowing the type to be moved into the future.  This is the design we have chosen.
-
-*/
+/// Provides inline notifications when an observed task completes.
+///
+/// Unlike [`Observer`] which requires polling or awaiting, `ObserverNotified` allows
+/// you to receive immediate notification when a task completes. The notifier's
+/// [`notify`](Self::notify) method is called inline by the executor when the task
+/// finishes.
+///
+/// # Cancellation Behavior
+///
+/// When a task is cancelled, the notifier is dropped without calling [`notify`](Self::notify).
+/// This allows you to detect cancellation by implementing [`Drop`] for your notifier type.
+///
+/// # Design Note
+///
+/// This trait requires [`Unpin`] to allow the notifier to be moved during task execution.
+/// This design choice enables notifiers to maintain mutable state without requiring
+/// interior mutability patterns.
+///
+/// # Examples
+///
+/// ```
+/// use some_executor::observer::ObserverNotified;
+/// use std::sync::mpsc;
+///
+/// // A simple notifier that sends results through a channel
+/// struct ChannelNotifier<T> {
+///     sender: mpsc::Sender<T>,
+/// }
+///
+/// impl<T: Clone + 'static> ObserverNotified<T> for ChannelNotifier<T> {
+///     fn notify(&mut self, value: &T) {
+///         let _ = self.sender.send(value.clone());
+///     }
+/// }
+///
+/// // A notifier that logs completion
+/// struct LogNotifier {
+///     task_name: String,
+/// }
+///
+/// impl<T: std::fmt::Debug + ?Sized> ObserverNotified<T> for LogNotifier {
+///     fn notify(&mut self, value: &T) {
+///         println!("Task '{}' completed with: {:?}", self.task_name, value);
+///     }
+/// }
+///
+/// impl Drop for LogNotifier {
+///     fn drop(&mut self) {
+///         println!("Task '{}' was cancelled or notifier dropped", self.task_name);
+///     }
+/// }
+/// ```
 pub trait ObserverNotified<T: ?Sized>: Unpin + 'static {
-    /**
-        This function will be run inline when the task completes.
-    */
+    /// Called inline when the observed task completes successfully.
+    ///
+    /// This method is invoked by the executor immediately when the task finishes.
+    /// It will not be called if the task is cancelled.
+    ///
+    /// # Parameters
+    /// - `value`: A reference to the task's output value
     fn notify(&mut self, value: &T);
 }
 
-/**
-A trait for executors to receive notifications.
-
-Handling notifications is optional.  If your executor does not want to bother, pass `None` in place
-of functions taking this type, and set the type to `std::convert::Infallible`.  This is a special type
-that cannot be constructed, yet it has implementations of the traits required.
-*/
+/// Allows executors to receive notifications about observer lifecycle events.
+///
+/// This trait enables executors to be notified when observers request task cancellation.
+/// While implementing cancellation support is optional, it can improve efficiency by
+/// allowing executors to stop polling cancelled tasks.
+///
+/// # Using Without Notifications
+///
+/// If your executor doesn't need notifications, use [`std::convert::Infallible`] as
+/// the type parameter and pass `None` where executor notifiers are expected:
+///
+/// ```ignore
+/// use std::convert::Infallible;
+/// use some_executor::SomeExecutor;
+///
+/// // Define an executor that doesn't use notifications
+/// struct MyExecutor;
+/// 
+/// impl SomeExecutor for MyExecutor {
+///     type ExecutorNotifier = Infallible;
+///     
+///     // Implement the required methods...
+///     // (implementation details omitted for brevity)
+/// }
+/// ```
+///
+/// # Examples
+///
+/// ```
+/// use some_executor::observer::ExecutorNotified;
+///
+/// // A simple notifier that tracks cancellation requests
+/// struct CancellationTracker {
+///     task_id: u64,
+///     cancelled: bool,
+/// }
+///
+/// impl ExecutorNotified for CancellationTracker {
+///     fn request_cancel(&mut self) {
+///         self.cancelled = true;
+///         println!("Task {} cancellation requested", self.task_id);
+///         // Executor can now stop polling this task
+///     }
+/// }
+/// ```
 pub trait ExecutorNotified: 'static {
-    /**
-    This function is called when the user requests the task be cancelled.
-
-    It is not required that executors handle this, but it may provide some efficiency.
-
-    */
+    /// Called when an observer requests cancellation of its associated task.
+    ///
+    /// Executors can use this notification to stop polling the task, though
+    /// implementing this is optional. The cancellation is already tracked through
+    /// other mechanisms, so this is purely an optimization opportunity.
     fn request_cancel(&mut self);
 }
 
