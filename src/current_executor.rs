@@ -71,10 +71,10 @@ fn current_task_executor() -> Option<Box<DynExecutor>> {
 /// // Use it to spawn a task
 /// let task = Task::without_notifications(
 ///     "example task".to_string(),
+///     Configuration::default(),
 ///     async {
 ///         println!("Hello from spawned task");
 ///     },
-///     Configuration::default()
 /// );
 /// 
 /// let _observer = executor.spawn(task).detach();
@@ -99,10 +99,10 @@ fn current_task_executor() -> Option<Box<DynExecutor>> {
 /// for i in 0..100 {
 ///     let task = Task::without_notifications(
 ///         format!("task-{}", i),
+///         Configuration::default(),
 ///         async move {
 ///             println!("Task {}", i);
 ///         },
-///         Configuration::default()
 ///     );
 ///     executor.spawn(task);
 /// }
@@ -112,10 +112,10 @@ fn current_task_executor() -> Option<Box<DynExecutor>> {
 ///     let mut executor = current_executor(); // Performs discovery each time
 ///     let task = Task::without_notifications(
 ///         format!("task-{}", i),
+///         Configuration::default(),
 ///         async move {
 ///             println!("Task {}", i);
 ///         },
-///         Configuration::default()
 ///     );
 ///     executor.spawn(task).detach();
 /// }

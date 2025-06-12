@@ -66,8 +66,8 @@
 //!
 //! let task = Task::without_notifications(
 //!     "example".to_string(),
+//!     Configuration::default(),
 //!     async { println!("Running on thread executor"); },
-//!     Configuration::default()
 //! );
 //!
 //! executor.spawn(task).detach();

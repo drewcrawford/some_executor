@@ -35,11 +35,11 @@
 //! # async fn example() {
 //! let task = Task::without_notifications(
 //!     "my-task".to_string(),
+//!     Configuration::default(),
 //!     async { 
 //!         println!("Hello from task!");
 //!         42
 //!     },
-//!     Configuration::default()
 //! );
 //!
 //! let mut executor = current_executor();
@@ -64,6 +64,7 @@
 //!
 //! let task = Task::without_notifications(
 //!     "high-priority-cpu".to_string(),
+//!     config,
 //!     async {
 //!         // Some CPU-intensive operation
 //!         let mut sum = 0u64;
@@ -71,7 +72,6 @@
 //!             sum += i;
 //!         }
 //!     },
-//!     config
 //! );
 //! # }
 //! ```
@@ -118,8 +118,8 @@ use std::task::{Context, Poll};
 ///
 /// let task = Task::without_notifications(
 ///     "example".to_string(),
+///     Configuration::default(),
 ///     async { 42 },
-///     Configuration::default()
 /// );
 ///
 /// let id = task.task_id();
@@ -208,11 +208,11 @@ static TASK_IDS: AtomicU64 = AtomicU64::new(0);
 ///
 /// let task: Task<_, Infallible> = Task::without_notifications(
 ///     "fetch-data".to_string(),
+///     Configuration::default(),
 ///     async {
 ///         // Simulate fetching data
 ///         "data from server"
 ///     },
-///     Configuration::default()
 /// );
 /// ```
 ///
@@ -607,8 +607,8 @@ impl<F: Future, N> Task<F, N> {
     ///
     /// let task = Task::without_notifications(
     ///     "delayed-task".to_string(),
+    ///     config,
     ///     async { println!("This runs after 5 seconds"); },
-    ///     config
     /// );
     /// ```
     pub fn poll_after(&self) -> crate::sys::Instant {
@@ -677,8 +677,8 @@ impl<F: Future, N> Task<F, N> {
     /// # async fn example() {
     /// let task = Task::without_notifications(
     ///     "compute".to_string(),
+    ///     Configuration::default(),
     ///     async { 2 + 2 },
-    ///     Configuration::default()
     /// );
     ///
     /// let mut executor = MyExecutor;
@@ -769,11 +769,11 @@ impl<F: Future, N> Task<F, N> {
     ///
     /// let task = Task::without_notifications(
     ///     "local-work".to_string(),
+    ///     Configuration::default(),
     ///     async { 
     ///         // Can access thread-local data here
     ///         println!("Running on the local thread");
     ///     },
-    ///     Configuration::default()
     /// );
     ///
     /// let (spawned, observer) = task.spawn_local(&mut executor);
@@ -942,8 +942,9 @@ impl<F: Future> Task<F, Infallible> {
 
     # Parameters
     - `label`: A human-readable label for the task.
-    - `future`: The future to run.
     - `configuration`: Configuration for the task.
+    - `future`: The future to run.
+
 
     # Details
 
@@ -951,7 +952,7 @@ impl<F: Future> Task<F, Infallible> {
 
     This function avoids the need to specify the type parameter to [Task].
     */
-    pub fn without_notifications(label: String, future: F, configuration: Configuration) -> Self {
+    pub fn without_notifications(label: String, configuration: Configuration,future: F) -> Self {
         Task::with_notifications(label, configuration, None, future)
     }
 }
@@ -1205,8 +1206,8 @@ impl
 ///
 /// let task = Task::without_notifications(
 ///     "simple".to_string(),
+///     Configuration::default(),
 ///     async { "done" },
-///     Configuration::default()
 /// );
 /// ```
 ///
@@ -1858,7 +1859,7 @@ mod tests {
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_create_no_notify() {
-        let t = Task::without_notifications("test".to_string(), async {}, Default::default());
+        let t = Task::without_notifications("test".to_string(), Default::default(),async {});
         assert_eq!(t.label(), "test");
     }
     #[cfg_attr(not(target_arch = "wasm32"), test)]

@@ -77,8 +77,8 @@ static GLOBAL_RUNTIME: OnceLock<Box<DynExecutor>> = OnceLock::new();
 /// // Now you can spawn tasks
 /// let task = Task::without_notifications(
 ///     "my-task".to_string(),
+///     ConfigurationBuilder::new().build(),
 ///     async { 42 },
-///     ConfigurationBuilder::new().build()
 /// );
 /// # // executor.spawn(task);
 /// ```
