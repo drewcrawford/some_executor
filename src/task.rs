@@ -84,7 +84,7 @@
 //! * [`IS_CANCELLED`] - Cancellation status
 //!
 
-use crate::dyn_observer_notified::ObserverNotifiedErased;
+use crate::dyn_observer_notified::{ObserverNotifiedErased, ObserverNotifiedErasedLocal};
 use crate::hint::Hint;
 use crate::local::UnsafeErasedLocalExecutor;
 use crate::observer::{
@@ -118,6 +118,15 @@ type BoxedSendObserverNotifier = Box<dyn ObserverNotified<dyn Any + Send> + Send
 
 /// Type alias for a Task that can be used with object-safe spawning
 type ObjSafeTask = Task<BoxedSendFuture, BoxedSendObserverNotifier>;
+
+/// Type alias for a boxed future that outputs boxed Any (non-Send)
+type BoxedLocalFuture = Pin<Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>>;
+
+/// Type alias for a boxed observer notifier that handles Any values (non-Send)
+type BoxedLocalObserverNotifier = Box<dyn ObserverNotified<dyn Any + 'static>>;
+
+/// Type alias for a Task that can be used with local object-safe spawning
+type ObjSafeLocalTask = Task<BoxedLocalFuture, BoxedLocalObserverNotifier>;
 
 /// Type alias for the result of spawning a task onto an executor
 /// Returns a tuple of (SpawnedTask, TypedObserver)
@@ -972,6 +981,27 @@ impl<F: Future, N> Task<F, N> {
             notifier,
         )
     }
+
+    /**
+    Converts this task into one suitable for spawn_local_objsafe
+    */
+    pub fn into_objsafe_local(self) -> ObjSafeLocalTask
+    where
+        N: ObserverNotified<F::Output>,
+        F::Output: 'static + Unpin,
+        F: 'static,
+    {
+        let notifier = self.notifier.map(|n| {
+            Box::new(ObserverNotifiedErasedLocal::new(n))
+                as Box<dyn ObserverNotified<dyn Any + 'static>>
+        });
+        Task::new_objsafe_local(
+            self.label,
+            Box::new(async move { Box::new(self.future.await) as Box<dyn Any + 'static> }),
+            Configuration::new(self.hint, self.priority, self.poll_after),
+            notifier,
+        )
+    }
 }
 
 //infalliable notification methods
@@ -1226,6 +1256,25 @@ impl
         future: Box<dyn Future<Output = Box<dyn Any + Send + 'static>> + Send + 'static>,
         configuration: Configuration,
         notifier: Option<Box<dyn ObserverNotified<dyn Any + Send> + Send>>,
+    ) -> Self {
+        Self::with_notifications(label, configuration, notifier, Box::into_pin(future))
+    }
+}
+
+impl
+    Task<
+        Pin<Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>>,
+        Box<dyn ObserverNotified<dyn Any + 'static>>,
+    >
+{
+    /**
+            Creates a new local objsafe future
+    */
+    pub fn new_objsafe_local(
+        label: String,
+        future: Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>,
+        configuration: Configuration,
+        notifier: Option<Box<dyn ObserverNotified<dyn Any + 'static>>>,
     ) -> Self {
         Self::with_notifications(label, configuration, notifier, Box::into_pin(future))
     }
@@ -2069,5 +2118,40 @@ mod tests {
                 todo!()
             }
         }
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn test_into_objsafe_local_non_send() {
+        use std::rc::Rc;
+        use crate::task::Configuration;
+
+        // Create a non-Send type (Rc cannot be sent across threads)
+        let non_send_data = Rc::new(42);
+        
+        // Create a future that captures the non-Send data
+        let non_send_future = async move {
+            let _captured = non_send_data; // This makes the future !Send
+            "result"
+        };
+
+        // Create a task with the non-Send future
+        let task = Task::without_notifications(
+            "non-send-task".to_string(),
+            Configuration::default(),
+            non_send_future,
+        );
+
+        // Convert to objsafe local task - this should work because we don't require Send
+        let objsafe_task = task.into_objsafe_local();
+        
+        // Verify the task properties are preserved
+        assert_eq!(objsafe_task.label(), "non-send-task");
+        assert_eq!(objsafe_task.hint(), crate::hint::Hint::default());
+        assert_eq!(objsafe_task.priority(), crate::Priority::Unknown);
+
+        // This would not compile with into_objsafe() because the future is !Send:
+        // let _would_fail = task.into_objsafe(); // <- This line would cause compile error
+        // but it works with into_objsafe_local() because we don't require Send bounds
     }
 }
