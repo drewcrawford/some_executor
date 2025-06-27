@@ -238,21 +238,32 @@ pub fn set_thread_executor(runtime: Box<DynExecutor>) {
 /// let shared_data = Rc::new(42);
 /// let data_clone = shared_data.clone();
 ///
-/// // Use the thread local executor - note it needs to be mutable
-/// # /*
+/// // Use the thread local executor to spawn a !Send future
 /// thread_local_executor(|exec| {
 ///     if let Some(executor) = exec {
-///         // In practice, you'd need a way to get mutable access
-///         // This is a limitation of the current API design
+///         let task = Task::without_notifications(
+///             "local_task".to_string(),
+///             Configuration::default(),
+///             async move {
+///                 println!("Running !Send future with data: {:?}", data_clone);
+///                 42
+///             },
+///         );
+///         let _observer = executor.spawn_local_objsafe(task.into_objsafe_local());
 ///     }
 /// });
-/// # */
 /// # }
 /// ```
 pub fn thread_local_executor<R>(
-    c: impl FnOnce(Option<&dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>) -> R,
+    c: impl FnOnce(Option<&mut dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>) -> R,
 ) -> R {
-    THREAD_LOCAL_EXECUTOR.with(|e| c(e.borrow().as_ref().map(|e| &**e)))
+    THREAD_LOCAL_EXECUTOR.with(|e| {
+        let mut borrowed = e.borrow_mut();
+        match borrowed.as_mut() {
+            Some(executor) => c(Some(&mut **executor)),
+            None => c(None),
+        }
+    })
 }
 
 /// Sets the local executor for the current thread.
