@@ -90,7 +90,13 @@ impl<UnderlyingNotifier: ExecutorNotified + Send> SomeExecutor
 #[cfg(test)]
 mod tests {
     use crate::{Infallible, SomeExecutor};
-    #[test]
+    
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::*;
+    
+    
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
     fn test_dyn_executor() {
         //mt2-697
         #[allow(dead_code)]

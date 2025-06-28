@@ -2123,12 +2123,12 @@ mod tests {
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_into_objsafe_local_non_send() {
-        use std::rc::Rc;
         use crate::task::Configuration;
+        use std::rc::Rc;
 
         // Create a non-Send type (Rc cannot be sent across threads)
         let non_send_data = Rc::new(42);
-        
+
         // Create a future that captures the non-Send data
         let non_send_future = async move {
             let _captured = non_send_data; // This makes the future !Send
@@ -2144,7 +2144,7 @@ mod tests {
 
         // Convert to objsafe local task - this should work because we don't require Send
         let objsafe_task = task.into_objsafe_local();
-        
+
         // Verify the task properties are preserved
         assert_eq!(objsafe_task.label(), "non-send-task");
         assert_eq!(objsafe_task.hint(), crate::hint::Hint::default());

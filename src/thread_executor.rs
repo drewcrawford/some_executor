@@ -196,9 +196,12 @@ pub fn set_thread_executor(runtime: Box<DynExecutor>) {
 /// Local executors can only execute futures on the current thread and are useful for
 /// working with thread-local data or resources that cannot be safely moved between threads.
 ///
+/// If no executor has been set for the thread, a LocalLastResortExecutor will be created
+/// automatically. This ensures that local tasks can always be spawned.
+///
 /// # Parameters
 ///
-/// - `c`: A closure that receives an optional reference to the thread's local executor.
+/// - `c`: A closure that receives a reference to the thread's local executor.
 ///   The executor's notifier type is erased to `Box<dyn ExecutorNotified>`.
 ///
 /// # Returns
@@ -211,12 +214,10 @@ pub fn set_thread_executor(runtime: Box<DynExecutor>) {
 /// use some_executor::thread_executor::{thread_local_executor, set_thread_local_executor};
 ///
 /// # fn example() {
-/// // Check if thread has a local executor
-/// let has_local = thread_local_executor(|exec| exec.is_some());
-///
-/// if !has_local {
-///     println!("No local executor set for this thread");
-/// }
+/// // Always has an executor (creates LocalLastResortExecutor if needed)
+/// thread_local_executor(|exec| {
+///     println!("Thread has a local executor");
+/// });
 /// # }
 /// ```
 ///
@@ -230,38 +231,39 @@ pub fn set_thread_executor(runtime: Box<DynExecutor>) {
 /// # use some_executor::observer::Observer;
 ///
 /// # fn example() {
-/// # let local_exec: Box<dyn some_executor::SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn some_executor::observer::ExecutorNotified>>> = todo!();
-/// // First set a local executor
-/// set_thread_local_executor(local_exec);
-///
 /// // Rc is !Send
 /// let shared_data = Rc::new(42);
 /// let data_clone = shared_data.clone();
 ///
 /// // Use the thread local executor to spawn a !Send future
-/// thread_local_executor(|exec| {
-///     if let Some(executor) = exec {
-///         let task = Task::without_notifications(
-///             "local_task".to_string(),
-///             Configuration::default(),
-///             async move {
-///                 println!("Running !Send future with data: {:?}", data_clone);
-///                 42
-///             },
-///         );
-///         let _observer = executor.spawn_local_objsafe(task.into_objsafe_local());
-///     }
+/// thread_local_executor(|executor| {
+///     let task = Task::without_notifications(
+///         "local_task".to_string(),
+///         Configuration::default(),
+///         async move {
+///             println!("Running !Send future with data: {:?}", data_clone);
+///             42
+///         },
+///     );
+///     let _observer = executor.spawn_local_objsafe(task.into_objsafe_local());
 /// });
 /// # }
 /// ```
 pub fn thread_local_executor<R>(
-    c: impl FnOnce(Option<&mut dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>) -> R,
+    c: impl FnOnce(&mut dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>) -> R,
 ) -> R {
     THREAD_LOCAL_EXECUTOR.with(|e| {
         let mut borrowed = e.borrow_mut();
         match borrowed.as_mut() {
-            Some(executor) => c(Some(&mut **executor)),
-            None => c(None),
+            Some(executor) => c(&mut **executor),
+            None => {
+                // Create and cache a LocalLastResortExecutor
+                let executor = Box::new(crate::local_last_resort::LocalLastResortExecutor::new())
+                    as Box<dyn SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn ExecutorNotified>>>;
+                *borrowed = Some(executor);
+                // Now we can safely unwrap since we just set it
+                c(&mut **borrowed.as_mut().unwrap())
+            }
         }
     })
 }
