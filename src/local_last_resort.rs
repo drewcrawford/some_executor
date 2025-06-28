@@ -18,8 +18,6 @@ use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU8, Ordering};
-#[cfg(not(target_arch = "wasm32"))]
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Condvar, Mutex};
 use std::task::{Context, Poll, RawWaker, RawWakerVTable};
 
@@ -30,7 +28,6 @@ impl LocalLastResortExecutor {
         LocalLastResortExecutor
     }
 }
-
 
 fn print_warning() {
     #[cfg(not(target_arch = "wasm32"))]
