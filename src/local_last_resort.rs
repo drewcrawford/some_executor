@@ -227,9 +227,12 @@ mod tests {
     use super::*;
     use crate::observer::Observer;
     use crate::task::{Configuration, Task};
+    use std::future::Future;
+    use std::pin::Pin;
     use std::rc::Rc;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::task::{Context, Poll};
 
     #[cfg(target_arch = "wasm32")]
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
@@ -397,10 +400,96 @@ mod tests {
         assert_eq!(counter.load(Ordering::Relaxed), 100);
     }
 
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn test_delayed_waking() {
+        let mut executor = LocalLastResortExecutor::new();
+
+        // Create a future that needs to be polled 3 times before completion
+        let delayed_future = DelayedFuture::new(3, 99);
+        let poll_counter = delayed_future.poll_count.clone();
+
+        let task = Task::without_notifications(
+            "delayed-task".to_string(),
+            Configuration::default(),
+            delayed_future,
+        );
+
+        let observer = executor.spawn_local(task);
+
+        // Verify the task completed successfully
+        match observer.observe() {
+            crate::observer::Observation::Ready(value) => {
+                assert_eq!(value, 99);
+                // Verify it was polled exactly 4 times (3 pending + 1 ready)
+                assert_eq!(poll_counter.load(Ordering::Relaxed), 4);
+            }
+            _ => panic!("Task should have completed successfully"),
+        }
+    }
+
     // Helper struct for async test
     struct DummyWaker;
 
     impl std::task::Wake for DummyWaker {
         fn wake(self: Arc<Self>) {}
+    }
+
+    // Custom future that polls N times before completion
+    struct DelayedFuture {
+        poll_count: Arc<AtomicU32>,
+        max_polls: u32,
+        result_value: i32,
+        waker_spawned: Arc<AtomicU32>,
+    }
+
+    impl DelayedFuture {
+        fn new(max_polls: u32, result_value: i32) -> Self {
+            Self {
+                poll_count: Arc::new(AtomicU32::new(0)),
+                max_polls,
+                result_value,
+                waker_spawned: Arc::new(AtomicU32::new(0)),
+            }
+        }
+    }
+
+    impl Future for DelayedFuture {
+        type Output = i32;
+
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let current_count = self.poll_count.fetch_add(1, Ordering::Relaxed);
+
+            if current_count >= self.max_polls {
+                return Poll::Ready(self.result_value);
+            }
+
+            // Only spawn the waking thread once
+            if self
+                .waker_spawned
+                .compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                let waker = cx.waker().clone();
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    std::thread::spawn(move || {
+                        // Give time for the executor to enter the condvar wait
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        for _ in 0..5 {
+                            waker.wake_by_ref();
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                        }
+                    });
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    // For WASM, we'll use a simple immediate wake since we can't use std::thread
+                    waker.wake();
+                }
+            }
+
+            Poll::Pending
+        }
     }
 }
