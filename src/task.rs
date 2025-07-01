@@ -88,7 +88,7 @@ use crate::dyn_observer_notified::{ObserverNotifiedErased, ObserverNotifiedErase
 use crate::hint::Hint;
 use crate::local::UnsafeErasedLocalExecutor;
 use crate::observer::{
-    ExecutorNotified, ObserverNotified, ObserverSender, TypedObserver, observer_channel,
+    ExecutorNotified, Observer, ObserverNotified, ObserverSender, TypedObserver, observer_channel,
 };
 use crate::{DynExecutor, Priority, SomeExecutor, SomeLocalExecutor, task_local};
 use std::any::Any;
@@ -1026,6 +1026,96 @@ impl<F: Future> Task<F, Infallible> {
     */
     pub fn without_notifications(label: String, configuration: Configuration, future: F) -> Self {
         Task::with_notifications(label, configuration, None, future)
+    }
+}
+
+// Methods for tasks that output ()
+impl<F: Future<Output = ()>, N> Task<F, N> {
+    /// Spawns the task onto the current executor and detaches the observer.
+    ///
+    /// This is a convenience method for fire-and-forget tasks that don't return a value.
+    /// The task will be spawned using [`current_executor`](crate::current_executor::current_executor)
+    /// and the observer will be automatically detached.
+    ///
+    /// # Requirements
+    ///
+    /// - The future must output `()`
+    /// - The future must be `Send + 'static`
+    /// - The notifier must be `Send + 'static`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, Configuration};
+    ///
+    /// # async fn example() {
+    /// let task = Task::without_notifications(
+    ///     "background-work".to_string(),
+    ///     Configuration::default(),
+    ///     async {
+    ///         println!("Running in background");
+    ///     },
+    /// );
+    ///
+    /// // Spawn and forget
+    /// task.spawn_current();
+    /// # }
+    /// ```
+    pub fn spawn_current(self)
+    where
+        F: Send + 'static,
+        N: ObserverNotified<()> + Send + 'static,
+    {
+        let mut executor = crate::current_executor::current_executor();
+        executor.spawn(self).detach();
+    }
+
+    /// Spawns the task onto the thread-local executor and detaches the observer.
+    ///
+    /// This is a convenience method for fire-and-forget tasks that don't return a value
+    /// and may not be `Send`. The task will be spawned using the thread-local executor
+    /// and the observer will be automatically detached.
+    ///
+    /// # Requirements
+    ///
+    /// - The future must output `()`
+    /// - The future must be `'static` (but doesn't need to be `Send`)
+    /// - The notifier must implement `ObserverNotified<()>`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, Configuration};
+    /// use std::rc::Rc;
+    ///
+    /// # fn example() {
+    /// // Rc is !Send
+    /// let data = Rc::new(42);
+    /// let data_clone = data.clone();
+    ///
+    /// let task = Task::without_notifications(
+    ///     "local-work".to_string(),
+    ///     Configuration::default(),
+    ///     async move {
+    ///         println!("Local data: {}", data_clone);
+    ///     },
+    /// );
+    ///
+    /// // Spawn on thread-local executor
+    /// task.spawn_thread_local();
+    /// # }
+    /// ```
+    pub fn spawn_thread_local(self)
+    where
+        F: 'static,
+        N: ObserverNotified<()> + 'static,
+    {
+        let objsafe_task = self.into_objsafe_local();
+        crate::thread_executor::thread_local_executor(|executor| {
+            let observer = executor.spawn_local_objsafe(objsafe_task);
+            // Can't call detach on trait object, so we just drop it
+            drop(observer);
+        });
     }
 }
 
