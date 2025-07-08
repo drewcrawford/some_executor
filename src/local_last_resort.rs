@@ -377,7 +377,7 @@ mod tests {
         let counter_clone = counter.clone();
 
         // Test that thread_local_executor provides a working executor
-        thread_local_executor(|executor| {
+        thread_local_executor(|executor_rc| {
             let task = Task::without_notifications(
                 "thread-local-test".to_string(),
                 Configuration::default(),
@@ -387,7 +387,14 @@ mod tests {
                 },
             );
 
-            let observer = executor.spawn_local_objsafe(task.into_objsafe_local());
+            let observer = if let Ok(mut executor) = executor_rc.try_borrow_mut() {
+                executor.spawn_local_objsafe(task.into_objsafe_local())
+            } else {
+                // We're in a nested call - create a temporary executor
+                let mut temp_executor =
+                    Box::new(crate::local_last_resort::LocalLastResortExecutor::new());
+                temp_executor.spawn_local_objsafe(task.into_objsafe_local())
+            };
             match observer.observe() {
                 crate::observer::Observation::Ready(result) => {
                     let value = result.downcast::<&str>().expect("Should be &str");

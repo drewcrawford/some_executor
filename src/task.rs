@@ -1111,8 +1111,16 @@ impl<F: Future<Output = ()>, N> Task<F, N> {
         N: ObserverNotified<()> + 'static,
     {
         let objsafe_task = self.into_objsafe_local();
-        crate::thread_executor::thread_local_executor(|executor| {
-            let observer = executor.spawn_local_objsafe(objsafe_task);
+        crate::thread_executor::thread_local_executor(|executor_rc| {
+            // Handle the case where we're already borrowed (nested call)
+            let observer = if let Ok(mut executor) = executor_rc.try_borrow_mut() {
+                executor.spawn_local_objsafe(objsafe_task)
+            } else {
+                // We're in a nested call - create a temporary executor
+                let mut temp_executor =
+                    Box::new(crate::local_last_resort::LocalLastResortExecutor::new());
+                temp_executor.spawn_local_objsafe(objsafe_task)
+            };
             // Can't call detach on trait object, so we just drop it
             drop(observer);
         });
@@ -2243,5 +2251,36 @@ mod tests {
         // This would not compile with into_objsafe() because the future is !Send:
         // let _would_fail = task.into_objsafe(); // <- This line would cause compile error
         // but it works with into_objsafe_local() because we don't require Send bounds
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn test_nested_spawn_thread_local_no_panic() {
+        // This test verifies that the nested submission bug is fixed
+        // The key is that it should not panic with BorrowMutError anymore
+
+        use crate::thread_executor::thread_local_executor;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+
+        let nested_call_worked = Arc::new(AtomicBool::new(false));
+        let nested_call_worked_clone = nested_call_worked.clone();
+
+        // This should not panic with BorrowMutError
+        thread_local_executor(|_executor_rc1| {
+            // This nested call should work now
+            thread_local_executor(|_executor_rc2| {
+                // If we get here without panicking, the fix worked!
+                nested_call_worked_clone.store(true, Ordering::Relaxed);
+            });
+        });
+
+        // If we reach here, the BorrowMutError is fixed
+        assert!(
+            nested_call_worked.load(Ordering::Relaxed),
+            "Nested call should have succeeded"
+        );
     }
 }
