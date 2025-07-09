@@ -17,9 +17,6 @@ use crate::{LocalExecutorExt, SomeLocalExecutor};
 use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
-use std::task::{Context, Poll, RawWaker, RawWakerVTable};
 
 pub(crate) struct LocalLastResortExecutor;
 
@@ -42,104 +39,6 @@ fn print_warning() {
     }
 }
 
-// Same pattern as the global last resort executor
-const SLEEPING: u8 = 0;
-const LISTENING: u8 = 1;
-const WAKEPLS: u8 = 2;
-
-struct Shared {
-    condvar: Condvar,
-    mutex: Mutex<bool>,
-    inline_notify: AtomicU8,
-}
-
-struct Waker {
-    shared: Arc<Shared>,
-}
-
-static WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
-    |data| {
-        let waker = unsafe { Arc::from_raw(data as *const Waker) };
-        let w2 = waker.clone();
-        std::mem::forget(waker);
-        RawWaker::new(Arc::into_raw(w2) as *const (), &WAKER_VTABLE)
-    },
-    |data| {
-        let waker = unsafe { Arc::from_raw(data as *const Waker) };
-        let old = waker.shared.inline_notify.swap(WAKEPLS, Ordering::Relaxed);
-        if old == SLEEPING {
-            waker.shared.condvar.notify_one();
-        }
-        drop(waker);
-    },
-    |data| {
-        let waker = unsafe { Arc::from_raw(data as *const Waker) };
-        let old = waker.shared.inline_notify.swap(WAKEPLS, Ordering::Relaxed);
-        if old == SLEEPING {
-            waker.shared.condvar.notify_one();
-        }
-        std::mem::forget(waker);
-    },
-    |data| {
-        let waker = unsafe { Arc::from_raw(data as *const Waker) };
-        drop(waker);
-    },
-);
-
-impl Waker {
-    fn into_core_waker(self) -> core::task::Waker {
-        let data = Arc::into_raw(Arc::new(self));
-        unsafe { core::task::Waker::from_raw(RawWaker::new(data as *const (), &WAKER_VTABLE)) }
-    }
-}
-
-// Helper to run a SpawnedLocalTask to completion using condvar/mutex
-fn run_local_task<F, N>(mut spawned: crate::task::SpawnedLocalTask<F, N, LocalLastResortExecutor>)
-where
-    F: Future,
-    N: ObserverNotified<F::Output>,
-{
-    let shared = Arc::new(Shared {
-        condvar: Condvar::new(),
-        mutex: Mutex::new(false),
-        inline_notify: AtomicU8::new(SLEEPING),
-    });
-    let waker = Waker {
-        shared: shared.clone(),
-    }
-    .into_core_waker();
-    let mut context = Context::from_waker(&waker);
-    let mut executor = LocalLastResortExecutor::new();
-    let mut pinned = unsafe { Pin::new_unchecked(&mut spawned) };
-
-    loop {
-        let mut _guard = shared.mutex.lock().expect("Mutex poisoned");
-        // Eagerly poll
-        shared.inline_notify.store(LISTENING, Ordering::Relaxed);
-        let r = pinned.as_mut().poll(&mut context, &mut executor, None);
-        match r {
-            Poll::Ready(()) => {
-                return;
-            }
-            Poll::Pending => {
-                let old = shared.inline_notify.swap(SLEEPING, Ordering::Relaxed);
-                if old == WAKEPLS {
-                    // Release lock anyway
-                    drop(_guard);
-                    continue; // Poll eagerly
-                } else {
-                    _guard = shared
-                        .condvar
-                        .wait_while(_guard, |_| {
-                            shared.inline_notify.load(Ordering::Relaxed) != WAKEPLS
-                        })
-                        .expect("Condvar poisoned");
-                }
-            }
-        }
-    }
-}
-
 impl<'a> SomeLocalExecutor<'a> for LocalLastResortExecutor {
     type ExecutorNotifier = Box<dyn ExecutorNotified>;
 
@@ -157,7 +56,7 @@ impl<'a> SomeLocalExecutor<'a> for LocalLastResortExecutor {
 
         // We need to handle lifetime issues here. Since this is a last resort executor,
         // we'll run the task synchronously on the current thread.
-        run_local_task(spawned);
+        crate::sys::run_local_task(spawned);
 
         observer
     }
@@ -175,7 +74,7 @@ impl<'a> SomeLocalExecutor<'a> for LocalLastResortExecutor {
         let (spawned, observer) = task.spawn_local(self);
 
         // Run the task synchronously and return a ready future
-        run_local_task(spawned);
+        crate::sys::run_local_task(spawned);
 
         std::future::ready(observer)
     }
@@ -191,7 +90,7 @@ impl<'a> SomeLocalExecutor<'a> for LocalLastResortExecutor {
 
         let (spawned, observer) = task.spawn_local_objsafe(self);
 
-        run_local_task(spawned);
+        crate::sys::run_local_task(spawned);
 
         Box::new(observer)
     }

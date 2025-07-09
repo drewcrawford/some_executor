@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+#![cfg(not(target_arch = "wasm32"))]
+
 /*!
 This executor is in use when no other executors are registered.
 
@@ -24,9 +26,6 @@ use std::task::{Context, Poll, RawWaker, RawWakerVTable};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::thread;
-
-#[cfg(target_arch = "wasm32")]
-use wasm_thread as thread;
 
 pub(crate) struct LastResortExecutor;
 

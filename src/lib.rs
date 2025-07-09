@@ -105,6 +105,7 @@ mod dyn_observer;
 mod dyn_observer_notified;
 pub mod global_executor;
 pub mod hint;
+#[cfg(not(target_arch = "wasm32"))]
 mod last_resort;
 mod local;
 mod local_last_resort;
