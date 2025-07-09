@@ -1352,30 +1352,7 @@ impl<F: Future<Output = ()>, N> Task<F, N> {
         F: 'static,
         N: ObserverNotified<()> + 'static,
     {
-        let objsafe_task = self.into_objsafe_local();
-        crate::thread_executor::thread_local_executor(|executor_rc| {
-            let observer = match executor_rc {
-                Some(executor_rc) => {
-                    // Handle the case where we're already borrowed (nested call)
-                    if let Ok(mut executor) = executor_rc.try_borrow_mut() {
-                        executor.spawn_local_objsafe(objsafe_task)
-                    } else {
-                        // We're in a nested call - create a temporary executor
-                        let mut temp_executor =
-                            Box::new(crate::local_last_resort::LocalLastResortExecutor::new());
-                        temp_executor.spawn_local_objsafe(objsafe_task)
-                    }
-                }
-                None => {
-                    // No thread-local executor available - create a temporary one
-                    let mut temp_executor =
-                        Box::new(crate::local_last_resort::LocalLastResortExecutor::new());
-                    temp_executor.spawn_local_objsafe(objsafe_task)
-                }
-            };
-            // Can't call detach on trait object, so we just drop it
-            drop(observer);
-        });
+        todo!("Not yet implemented");
     }
 }
 

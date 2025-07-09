@@ -221,9 +221,10 @@ pub fn set_thread_executor(runtime: Box<DynExecutor>) {
 /// use some_executor::thread_executor::{thread_local_executor, set_thread_local_executor};
 ///
 /// # fn example() {
-/// // Always has an executor (creates LocalLastResortExecutor if needed)
 /// thread_local_executor(|exec| {
-///     println!("Thread has a local executor");
+///     if let Some(executor_rc) = exec {
+///         //do something with the local executor
+///     }
 /// });
 /// # }
 /// ```

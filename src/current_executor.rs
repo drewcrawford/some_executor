@@ -138,13 +138,6 @@ pub fn current_executor() -> Box<DynExecutor> {
     {
         executor
     } else {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            Box::new(crate::last_resort::LastResortExecutor::new())
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            panic!("No global executor available on WASM32 - LastResortExecutor not supported")
-        }
+        Box::new(crate::last_resort::LastResortExecutor::new())
     }
 }
