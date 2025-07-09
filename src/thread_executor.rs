@@ -244,39 +244,38 @@ pub fn set_thread_executor(runtime: Box<DynExecutor>) {
 ///
 /// // Use the thread local executor to spawn a !Send future
 /// thread_local_executor(|executor_rc| {
-///     let task = Task::without_notifications(
-///         "local_task".to_string(),
-///         Configuration::default(),
-///         async move {
-///             println!("Running !Send future with data: {:?}", data_clone);
-///             42
-///         },
-///     );
-///     let _observer = executor_rc.borrow_mut().spawn_local_objsafe(task.into_objsafe_local());
+///     if let Some(executor_rc) = executor_rc {
+///         let task = Task::without_notifications(
+///             "local_task".to_string(),
+///             Configuration::default(),
+///             async move {
+///                 println!("Running !Send future with data: {:?}", data_clone);
+///                 42
+///             },
+///         );
+///         let _observer = executor_rc.borrow_mut().spawn_local_objsafe(task.into_objsafe_local());
+///     }
 /// });
 /// # }
 /// ```
 pub fn thread_local_executor<R>(
     c: impl FnOnce(
-        Rc<RefCell<Box<dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>>>,
+        Option<
+            Rc<RefCell<Box<dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>>>,
+        >,
     ) -> R,
 ) -> R {
     THREAD_LOCAL_EXECUTOR.with(|e| {
-        let mut borrowed = e.borrow_mut();
+        let borrowed = e.borrow();
         match borrowed.as_ref() {
             Some(executor_rc) => {
                 let executor_rc = executor_rc.clone();
                 drop(borrowed); // Release the borrow before calling the closure
-                c(executor_rc)
+                c(Some(executor_rc))
             }
             None => {
-                // Create and cache a LocalLastResortExecutor
-                let executor = Box::new(crate::local_last_resort::LocalLastResortExecutor::new())
-                    as Box<dyn SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn ExecutorNotified>>>;
-                let executor_rc = Rc::new(RefCell::new(executor));
-                *borrowed = Some(executor_rc.clone());
                 drop(borrowed); // Release the borrow before calling the closure
-                c(executor_rc)
+                c(None)
             }
         }
     })

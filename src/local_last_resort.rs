@@ -286,13 +286,23 @@ mod tests {
                 },
             );
 
-            let observer = if let Ok(mut executor) = executor_rc.try_borrow_mut() {
-                executor.spawn_local_objsafe(task.into_objsafe_local())
-            } else {
-                // We're in a nested call - create a temporary executor
-                let mut temp_executor =
-                    Box::new(crate::local_last_resort::LocalLastResortExecutor::new());
-                temp_executor.spawn_local_objsafe(task.into_objsafe_local())
+            let observer = match executor_rc {
+                Some(executor_rc) => {
+                    if let Ok(mut executor) = executor_rc.try_borrow_mut() {
+                        executor.spawn_local_objsafe(task.into_objsafe_local())
+                    } else {
+                        // We're in a nested call - create a temporary executor
+                        let mut temp_executor =
+                            Box::new(crate::local_last_resort::LocalLastResortExecutor::new());
+                        temp_executor.spawn_local_objsafe(task.into_objsafe_local())
+                    }
+                }
+                None => {
+                    // No thread-local executor available - create a temporary one
+                    let mut temp_executor =
+                        Box::new(crate::local_last_resort::LocalLastResortExecutor::new());
+                    temp_executor.spawn_local_objsafe(task.into_objsafe_local())
+                }
             };
             match observer.observe() {
                 crate::observer::Observation::Ready(result) => {
