@@ -165,6 +165,22 @@ pub type BoxedLocalObserver =
 /// Type alias for a future that returns a boxed observer for local Any values
 pub type BoxedLocalObserverFuture<'s> = Box<dyn Future<Output = BoxedLocalObserver> + 's>;
 
+/// Type alias for a boxed future that outputs boxed Any and is 'static but not Send
+pub type BoxedStaticFuture = Pin<Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>>;
+
+/// Type alias for a boxed observer notifier that handles 'static Any values (non-Send)
+pub type BoxedStaticObserverNotifier = Box<dyn ObserverNotified<(dyn Any + 'static)>>;
+
+/// Type alias for a Task that can be used with static object-safe spawning
+pub type ObjSafeStaticTask = Task<BoxedStaticFuture, BoxedStaticObserverNotifier>;
+
+/// Type alias for a boxed observer that handles 'static Any values (non-Send)
+pub type BoxedStaticObserver =
+    Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>;
+
+/// Type alias for a future that returns a boxed observer for static Any values
+pub type BoxedStaticObserverFuture<'s> = Box<dyn Future<Output = BoxedStaticObserver> + 's>;
+
 /*
 Design notes.
 Send is required because we often want to take this trait object and port it to another thread, etc.
@@ -384,6 +400,105 @@ pub trait SomeLocalExecutor<'future> {
 }
 
 /**
+A trait for executors that can spawn static, non-Send tasks.
+
+This trait is designed for executors that can handle futures with a `'static` lifetime
+but without the `Send` bound. This is useful for cases where you need static data
+without the overhead of Send synchronization.
+
+Unlike `SomeExecutor` which requires `Send` and `SomeLocalExecutor` which supports
+arbitrary lifetimes, `SomeStaticExecutor` specifically targets the middle ground
+of static lifetime without Send requirements.
+
+# Use Cases
+
+- Thread-local static data access
+- Executors that work with static futures but don't need Send
+- Applications with static lifetimes but thread-local execution
+- Bridge between local and global executor patterns
+*/
+pub trait SomeStaticExecutor {
+    type ExecutorNotifier: ExecutorNotified;
+
+    /**
+    Spawns a static, non-Send future onto the runtime.
+
+    # Parameters
+    - `task`: The task to spawn containing a 'static future
+
+    # Note
+
+    The future must be `'static` but does not need to be `Send`. This allows
+    for static data access without the synchronization overhead of Send.
+
+    # Implementation notes
+
+    For details on why F::Output is Unpin, see the comment on [observer::TypedObserver].
+    */
+    fn spawn_static<F, Notifier: ObserverNotified<F::Output>>(
+        &mut self,
+        task: Task<F, Notifier>,
+    ) -> impl Observer<Value = F::Output>
+    where
+        Self: Sized,
+        F: Future + 'static,
+        F::Output: 'static + Unpin;
+
+    /**
+    Spawns a static, non-Send future onto the runtime.
+
+    Like [Self::spawn_static], but some implementors may have a fast path for the async context.
+
+    # Implementation notes
+
+    For details on why F::Output is Unpin, see the comment on [observer::TypedObserver].
+    */
+    fn spawn_static_async<F, Notifier: ObserverNotified<F::Output>>(
+        &mut self,
+        task: Task<F, Notifier>,
+    ) -> impl Future<Output = impl Observer<Value = F::Output>>
+    where
+        Self: Sized,
+        F: Future + 'static,
+        F::Output: 'static + Unpin;
+
+    /**
+    Spawns a static, non-Send future onto the runtime.
+
+    # Note
+
+    This differs from [Self::spawn_static] in that we take a boxed future, since we can't have generic fn.
+    Implementations probably pin this with [Box::into_pin].
+    */
+    fn spawn_static_objsafe(&mut self, task: ObjSafeStaticTask) -> BoxedStaticObserver;
+
+    /**
+    Spawns a static, non-Send future onto the runtime.
+
+    # Note
+
+    This differs from [Self::spawn_static] in that we take a boxed future, since we can't have generic fn.
+    Implementations probably pin this with [Box::into_pin].
+    */
+    fn spawn_static_objsafe_async<'s>(
+        &'s mut self,
+        task: ObjSafeStaticTask,
+    ) -> BoxedStaticObserverFuture<'s>;
+
+    /**
+    Produces an executor notifier.
+    */
+    fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
+}
+
+/**
+A non-objsafe descendant of [SomeStaticExecutor].
+
+This trait provides a more ergonomic interface for static executors, but is not object-safe.
+*/
+pub trait StaticExecutorExt: SomeStaticExecutor + Clone {}
+
+/**
 The appropriate type for a dynamically-dispatched executor.
 */
 pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier = Infallible>;
@@ -470,6 +585,56 @@ impl<'future> SomeLocalExecutor<'future> for Infallible {
                 >,
             > + 's,
     > {
+        unimplemented!()
+    }
+
+    fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
+        unimplemented!()
+    }
+}
+
+impl SomeStaticExecutor for Infallible {
+    type ExecutorNotifier = Infallible;
+
+    fn spawn_static<F, Notifier: ObserverNotified<F::Output>>(
+        &mut self,
+        _task: Task<F, Notifier>,
+    ) -> impl Observer<Value = F::Output>
+    where
+        Self: Sized,
+        F: Future + 'static,
+        F::Output: 'static + Unpin,
+    {
+        #[allow(unreachable_code)]
+        {
+            unimplemented!() as TypedObserver<F::Output, Infallible>
+        }
+    }
+
+    fn spawn_static_async<F, Notifier: ObserverNotified<F::Output>>(
+        &mut self,
+        _task: Task<F, Notifier>,
+    ) -> impl Future<Output = impl Observer<Value = F::Output>>
+    where
+        Self: Sized,
+        F: Future + 'static,
+        F::Output: 'static + Unpin,
+    {
+        #[allow(unreachable_code)]
+        #[allow(clippy::async_yields_async)]
+        {
+            async { todo!() as TypedObserver<F::Output, Infallible> }
+        }
+    }
+
+    fn spawn_static_objsafe(&mut self, _task: ObjSafeStaticTask) -> BoxedStaticObserver {
+        unimplemented!()
+    }
+
+    fn spawn_static_objsafe_async<'s>(
+        &'s mut self,
+        _task: ObjSafeStaticTask,
+    ) -> BoxedStaticObserverFuture<'s> {
         unimplemented!()
     }
 

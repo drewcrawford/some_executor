@@ -90,7 +90,10 @@ use crate::local::UnsafeErasedLocalExecutor;
 use crate::observer::{
     ExecutorNotified, Observer, ObserverNotified, ObserverSender, TypedObserver, observer_channel,
 };
-use crate::{DynExecutor, Priority, SomeExecutor, SomeLocalExecutor, task_local};
+use crate::{
+    DynExecutor, ObjSafeStaticTask, Priority, SomeExecutor, SomeLocalExecutor, SomeStaticExecutor,
+    task_local,
+};
 use std::any::Any;
 use std::cell::RefCell;
 use std::convert::Infallible;
@@ -142,6 +145,13 @@ type SpawnLocalResult<'a, F, N, Executor> = (
     TypedObserver<<F as Future>::Output, <Executor as SomeLocalExecutor<'a>>::ExecutorNotifier>,
 );
 
+/// Type alias for the result of spawning a task on a static executor
+/// Returns a tuple with a spawned static task and observer
+type SpawnStaticResult<F, N, Executor> = (
+    SpawnedStaticTask<F, N, Executor>,
+    TypedObserver<<F as Future>::Output, <Executor as SomeStaticExecutor>::ExecutorNotifier>,
+);
+
 /// Type alias for the result of spawning a task using object-safe method
 /// Returns a tuple with a boxed executor notifier
 type SpawnObjSafeResult<F, N, Executor> = (
@@ -153,6 +163,13 @@ type SpawnObjSafeResult<F, N, Executor> = (
 /// Returns a tuple with a boxed executor notifier
 type SpawnLocalObjSafeResult<F, N, Executor> = (
     SpawnedLocalTask<F, N, Executor>,
+    TypedObserver<<F as Future>::Output, Box<dyn ExecutorNotified>>,
+);
+
+/// Type alias for the result of spawning a static task using object-safe method
+/// Returns a tuple with a boxed executor notifier
+type SpawnStaticObjSafeResult<F, N, Executor> = (
+    SpawnedStaticTask<F, N, Executor>,
     TypedObserver<<F as Future>::Output, Box<dyn ExecutorNotified>>,
 );
 
@@ -426,6 +443,45 @@ where
     task_id: TaskID,
 }
 
+/// A task that has been spawned onto a static executor.
+///
+/// `SpawnedStaticTask` is designed for executors that handle static futures without
+/// requiring `Send`. This is useful for thread-local executors that work with static
+/// data but don't need to cross thread boundaries.
+///
+/// # Type Parameters
+///
+/// * `F` - The underlying future type (must be `'static`)
+/// * `ONotifier` - The observer notification type for task completion
+/// * `Executor` - The static executor type that spawned this task
+///
+/// # Design Note
+///
+/// Unlike [`SpawnedTask`] which requires `Send`, `SpawnedStaticTask` only requires
+/// `'static`. This allows for static data access without the overhead of Send
+/// synchronization.
+///
+/// # Task-Local Context
+///
+/// When polled, this task sets up the same task-local variables as other spawned
+/// tasks, but without the `Send` requirement.
+pub struct SpawnedStaticTask<F, ONotifier, Executor>
+where
+    F: Future,
+{
+    task: F,
+    sender: ObserverSender<F::Output, ONotifier>,
+    poll_after: crate::sys::Instant,
+    executor: PhantomData<Executor>,
+    //these task-local properties are optional so we can move them in and out
+    label: Option<String>,
+    cancellation: Option<InFlightTaskCancellation>,
+    //copy-safe task-local properties
+    hint: Hint,
+    priority: Priority,
+    task_id: TaskID,
+}
+
 impl<F: Future, ONotifier, ENotifier> SpawnedTask<F, ONotifier, ENotifier> {
     /// Returns the execution hint for this spawned task.
     pub fn hint(&self) -> Hint {
@@ -517,6 +573,49 @@ impl<F: Future, ONotifier, Executor> SpawnedLocalTask<F, ONotifier, Executor> {
         self.task
     }
 }
+
+impl<F: Future, ONotifier, Executor> SpawnedStaticTask<F, ONotifier, Executor> {
+    /// Returns the execution hint for this spawned static task.
+    pub fn hint(&self) -> Hint {
+        self.hint
+    }
+
+    /// Returns the label of this spawned static task.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called while the task is being polled, as the label is temporarily
+    /// moved into task-local storage during polling.
+    pub fn label(&self) -> &str {
+        self.label.as_ref().expect("Future is polling")
+    }
+
+    /// Returns the priority of this spawned static task.
+    pub fn priority(&self) -> priority::Priority {
+        self.priority
+    }
+
+    /// Returns the earliest time this task should be polled.
+    ///
+    /// Executors should respect this time and not poll the task before it.
+    pub fn poll_after(&self) -> crate::sys::Instant {
+        self.poll_after
+    }
+
+    /// Returns the unique identifier for this spawned static task.
+    pub fn task_id(&self) -> TaskID {
+        self.task_id
+    }
+
+    /// Consumes the spawned static task and returns the underlying future.
+    ///
+    /// This is useful if you need to extract the future from the spawned task wrapper,
+    /// but note that you'll lose the task metadata and observer infrastructure.
+    pub fn into_future(self) -> F {
+        self.task
+    }
+}
+
 /// Provides information about the cancellation status of a running task.
 ///
 /// `InFlightTaskCancellation` allows tasks to check if they have been cancelled
@@ -869,6 +968,86 @@ impl<F: Future, N> Task<F, N> {
         };
         (spawned_task, receiver)
     }
+
+    /// Spawns the task onto a static executor.
+    ///
+    /// Static executors handle futures that are `'static` but not necessarily `Send`.
+    /// This is useful for thread-local executors that work with static data but don't
+    /// need to cross thread boundaries.
+    ///
+    /// # Arguments
+    ///
+    /// * `executor` - The static executor that will run this task
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// 1. A [`SpawnedStaticTask`] that can be polled by the executor
+    /// 2. A [`TypedObserver`] that can be used to await or check the task's completion
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, Configuration};
+    /// # use some_executor::SomeStaticExecutor;
+    /// # use some_executor::observer::{Observer, ObserverNotified, FinishedObservation, TypedObserver};
+    /// # use std::any::Any;
+    /// # use std::pin::Pin;
+    /// # use std::future::Future;
+    /// # use std::convert::Infallible;
+    ///
+    /// # struct MyStaticExecutor;
+    /// # impl SomeStaticExecutor for MyStaticExecutor {
+    /// #     type ExecutorNotifier = Infallible;
+    /// #     fn spawn_static<F: Future, N: ObserverNotified<F::Output>>(&mut self, task: some_executor::task::Task<F, N>) -> impl Observer<Value = F::Output> where F: 'static, F::Output: 'static {
+    /// #         todo!() as TypedObserver::<F::Output, Infallible>
+    /// #     }
+    /// #     fn spawn_static_async<F: Future, N: ObserverNotified<F::Output>>(&mut self, task: some_executor::task::Task<F, N>) -> impl Future<Output = impl Observer<Value = F::Output>> where F: 'static, F::Output: 'static {
+    /// #         async { todo!() as TypedObserver::<F::Output, Infallible> }
+    /// #     }
+    /// #     fn spawn_static_objsafe(&mut self, task: some_executor::task::Task<Pin<Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> { todo!() }
+    /// #     fn spawn_static_objsafe_async<'s>(&'s mut self, task: some_executor::task::Task<Pin<Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output = Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>> + 's> { Box::new(async { todo!() }) }
+    /// #     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> { None }
+    /// # }
+    /// let mut executor = MyStaticExecutor;
+    ///
+    /// let task = Task::without_notifications(
+    ///     "static-work".to_string(),
+    ///     Configuration::default(),
+    ///     async {
+    ///         // Can access static data here
+    ///         println!("Running on static executor");
+    ///     },
+    /// );
+    ///
+    /// let (spawned, observer) = task.spawn_static(&mut executor);
+    /// ```
+    pub fn spawn_static<Executor: SomeStaticExecutor>(
+        mut self,
+        executor: &mut Executor,
+    ) -> SpawnStaticResult<F, N, Executor> {
+        let cancellation = InFlightTaskCancellation::default();
+        let task_id = self.task_id();
+        let (sender, receiver) = observer_channel(
+            self.notifier.take(),
+            executor.executor_notifier(),
+            cancellation.clone(),
+            task_id,
+        );
+        let spawned_task = SpawnedStaticTask {
+            task: self.future,
+            sender,
+            executor: PhantomData,
+            poll_after: self.poll_after,
+            hint: self.hint,
+            priority: self.priority,
+            label: Some(self.label),
+            task_id,
+            cancellation: Some(cancellation),
+        };
+        (spawned_task, receiver)
+    }
+
     /**
     Spawns the task onto a local executor.
 
@@ -961,6 +1140,50 @@ impl<F: Future, N> Task<F, N> {
         (spawned_task, receiver)
     }
 
+    /// Spawns the task onto a static executor using object-safe method.
+    ///
+    /// This method is similar to [`spawn_static`](Self::spawn_static) but uses type erasure
+    /// to support object-safe trait usage.
+    ///
+    /// # Arguments
+    ///
+    /// * `executor` - The static executor that will run this task
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// 1. A [`SpawnedStaticTask`] that can be polled by the executor
+    /// 2. A [`TypedObserver`] that can be used to await or check the task's completion
+    pub fn spawn_static_objsafe<Executor: SomeStaticExecutor>(
+        mut self,
+        executor: &mut Executor,
+    ) -> SpawnStaticObjSafeResult<F, N, Executor> {
+        let cancellation = InFlightTaskCancellation::default();
+        let task_id = self.task_id();
+
+        let boxed_executor_notifier = executor
+            .executor_notifier()
+            .map(|n| Box::new(n) as Box<dyn ExecutorNotified>);
+        let (sender, receiver) = observer_channel(
+            self.notifier.take(),
+            boxed_executor_notifier,
+            cancellation.clone(),
+            task_id,
+        );
+        let spawned_task = SpawnedStaticTask {
+            task: self.future,
+            sender,
+            poll_after: self.poll_after,
+            hint: self.hint,
+            priority: self.priority,
+            executor: PhantomData,
+            label: Some(self.label),
+            task_id,
+            cancellation: Some(cancellation),
+        };
+        (spawned_task, receiver)
+    }
+
     /**
     Converts this task into one suitable for spawn_objsafe
     */
@@ -996,6 +1219,25 @@ impl<F: Future, N> Task<F, N> {
                 as Box<dyn ObserverNotified<dyn Any + 'static>>
         });
         Task::new_objsafe_local(
+            self.label,
+            Box::new(async move { Box::new(self.future.await) as Box<dyn Any + 'static> }),
+            Configuration::new(self.hint, self.priority, self.poll_after),
+            notifier,
+        )
+    }
+
+    /// Converts this task into one suitable for spawn_static_objsafe
+    pub fn into_objsafe_static(self) -> ObjSafeStaticTask
+    where
+        N: ObserverNotified<F::Output>,
+        F::Output: 'static + Unpin,
+        F: 'static,
+    {
+        let notifier = self.notifier.map(|n| {
+            Box::new(ObserverNotifiedErasedLocal::new(n))
+                as Box<dyn ObserverNotified<dyn Any + 'static>>
+        });
+        Task::new_objsafe_static(
             self.label,
             Box::new(async move { Box::new(self.future.await) as Box<dyn Any + 'static> }),
             Configuration::new(self.hint, self.priority, self.poll_after),
@@ -1369,6 +1611,19 @@ impl
             Creates a new local objsafe future
     */
     pub fn new_objsafe_local(
+        label: String,
+        future: Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>,
+        configuration: Configuration,
+        notifier: Option<Box<dyn ObserverNotified<dyn Any + 'static>>>,
+    ) -> Self {
+        Self::with_notifications(label, configuration, notifier, Box::into_pin(future))
+    }
+
+    /// Creates a new task suitable for static objsafe spawning.
+    ///
+    /// This constructor is used internally by [`into_objsafe_static`](Task::into_objsafe_static)
+    /// to create tasks that can be spawned on static executors using object-safe methods.
+    pub fn new_objsafe_static(
         label: String,
         future: Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>,
         configuration: Configuration,
@@ -1927,6 +2182,30 @@ impl<F: Future, N, E> AsRef<F> for SpawnedLocalTask<F, N, E> {
 }
 
 impl<F: Future, N, E> AsMut<F> for SpawnedLocalTask<F, N, E> {
+    fn as_mut(&mut self) -> &mut F {
+        &mut self.task
+    }
+}
+
+impl<F: Future, N, E> Debug for SpawnedStaticTask<F, N, E> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpawnedStaticTask")
+            .field("poll_after", &self.poll_after)
+            .field("hint", &self.hint)
+            .field("label", &self.label)
+            .field("priority", &self.priority)
+            .field("task_id", &self.task_id)
+            .finish()
+    }
+}
+
+impl<F: Future, N, E> AsRef<F> for SpawnedStaticTask<F, N, E> {
+    fn as_ref(&self) -> &F {
+        &self.task
+    }
+}
+
+impl<F: Future, N, E> AsMut<F> for SpawnedStaticTask<F, N, E> {
     fn as_mut(&mut self) -> &mut F {
         &mut self.task
     }
