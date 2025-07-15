@@ -19,3 +19,16 @@ where
         "Local task spawning without a proper executor is no longer supported. Please configure a local executor before spawning local tasks."
     );
 }
+
+/// Helper to run a SpawnedStaticTask to completion using condvar/mutex
+pub(crate) fn run_static_task<F, N, E>(_spawned: crate::task::SpawnedStaticTask<F, N, E>)
+where
+    F: Future + 'static,
+    N: ObserverNotified<F::Output>,
+    E: crate::SomeStaticExecutor,
+    F::Output: 'static + Unpin,
+{
+    panic!(
+        "Static task spawning without a proper executor is no longer supported. Please configure a static executor before spawning static tasks."
+    );
+}

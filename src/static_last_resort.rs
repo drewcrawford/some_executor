@@ -26,19 +26,6 @@ impl StaticLastResortExecutor {
     pub fn new() -> Self {
         StaticLastResortExecutor
     }
-
-    fn run_static_task<F, N>(_spawned: crate::task::SpawnedStaticTask<F, N, Self>)
-    where
-        F: Future + 'static,
-        N: ObserverNotified<F::Output>,
-        F::Output: 'static + Unpin,
-    {
-        // For now, we'll panic like the local_last_resort does
-        // TODO: Implement proper static task execution
-        panic!(
-            "Static task spawning without a proper executor is no longer supported. Please configure a static executor before spawning static tasks."
-        );
-    }
 }
 
 fn print_warning() {
@@ -71,7 +58,7 @@ impl SomeStaticExecutor for StaticLastResortExecutor {
 
         // We need to handle lifetime issues here. Since this is a last resort executor,
         // we'll run the task synchronously on the current thread.
-        Self::run_static_task(spawned);
+        crate::sys::run_static_task(spawned);
 
         observer
     }
@@ -89,7 +76,7 @@ impl SomeStaticExecutor for StaticLastResortExecutor {
         let (spawned, observer) = task.spawn_static(self);
 
         // Run the task synchronously and return a ready future
-        Self::run_static_task(spawned);
+        crate::sys::run_static_task(spawned);
 
         std::future::ready(observer)
     }
@@ -99,7 +86,7 @@ impl SomeStaticExecutor for StaticLastResortExecutor {
 
         let (spawned, observer) = task.spawn_static_objsafe(self);
 
-        Self::run_static_task(spawned);
+        crate::sys::run_static_task(spawned);
 
         Box::new(observer)
     }

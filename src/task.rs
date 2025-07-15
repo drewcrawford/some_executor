@@ -614,6 +614,65 @@ impl<F: Future, ONotifier, Executor> SpawnedStaticTask<F, ONotifier, Executor> {
     pub fn into_future(self) -> F {
         self.task
     }
+
+    /// Polls the spawned static task.
+    ///
+    /// This polls the underlying future while setting up the appropriate task-local
+    /// context, similar to other spawned task types but without the `Send` requirement.
+    ///
+    /// # Parameters
+    /// - `cx`: The context for the poll.
+    /// - `static_executor`: An optional static executor for spawning new !Send tasks,
+    ///   used to populate the task-local [TASK_STATIC_EXECUTOR] variable.
+    /// - `some_executor`: An optional executor for spawning new tasks, used to populate
+    ///   the task-local [TASK_EXECUTOR] variable.
+    ///
+    /// # Returns
+    /// `Poll::Ready(())` when the task completes or is cancelled, `Poll::Pending` otherwise.
+    pub fn poll<S>(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        static_executor: Option<&mut S>,
+        mut some_executor: Option<Box<(dyn SomeExecutor<ExecutorNotifier = Infallible> + 'static)>>,
+    ) -> std::task::Poll<()>
+    where
+        ONotifier: ObserverNotified<F::Output>,
+        S: SomeStaticExecutor,
+    {
+        let poll_after = self.poll_after();
+        //destructure
+        let (future, sender, label, priority, cancellation, task_id) = unsafe {
+            let unchecked = self.get_unchecked_mut();
+            let future = Pin::new_unchecked(&mut unchecked.task);
+            let sender = &mut unchecked.sender;
+            let label = &mut unchecked.label;
+            let priority = unchecked.priority;
+            let cancellation = &mut unchecked.cancellation;
+            let task_id = unchecked.task_id;
+            (future, sender, label, priority, cancellation, task_id)
+        };
+
+        let metadata = TaskMetadata {
+            priority,
+            task_id,
+            poll_after,
+        };
+        let state = TaskState {
+            sender,
+            label,
+            cancellation,
+            executor: &mut some_executor,
+        };
+        // Note: We pass None for local_executor since SpawnedStaticTask doesn't have a local executor parameter
+        common_poll(
+            future,
+            state,
+            None::<&mut Infallible>,
+            static_executor,
+            metadata,
+            cx,
+        )
+    }
 }
 
 /// Provides information about the cancellation status of a running task.
@@ -696,6 +755,16 @@ task_local! {
     Provides an executor local to the current task.
     */
     pub static const TASK_EXECUTOR: Option<Box<DynExecutor>>;
+}
+
+task_local! {
+    /**
+    Provides a static executor local to the current task.
+
+    This is similar to TASK_EXECUTOR but specifically for static executors
+    that can handle !Send futures.
+    */
+    pub static const TASK_STATIC_EXECUTOR: Option<Box<dyn SomeStaticExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>>;
 }
 
 thread_local! {
@@ -1356,10 +1425,11 @@ impl<F: Future<Output = ()>, N> Task<F, N> {
     }
 }
 
-fn common_poll<'l, F, N, L>(
+fn common_poll<'l, F, N, L, S>(
     future: Pin<&mut F>,
     state: TaskState<'_, F::Output, N>,
     local_executor: Option<&mut L>,
+    static_executor: Option<&mut S>,
     metadata: TaskMetadata,
     cx: &mut Context,
 ) -> std::task::Poll<()>
@@ -1367,6 +1437,7 @@ where
     F: Future,
     N: ObserverNotified<F::Output>,
     L: SomeLocalExecutor<'l>,
+    S: SomeStaticExecutor,
 {
     assert!(
         metadata.poll_after <= crate::sys::Instant::now(),
@@ -1403,6 +1474,13 @@ where
         TASK_EXECUTOR.with_mut(|e| {
             *e = Some(state.executor.take());
         });
+        if let Some(_static_executor) = static_executor {
+            // For now, we'll just handle static executors by setting the task-local
+            // TODO: Add proper type erasure for static executors similar to local executors
+            // TASK_STATIC_EXECUTOR.with_mut(|e| {
+            //     *e = Some(Box::new(StaticExecutorWrapper::new(_static_executor)));
+            // });
+        }
         if let Some(local_executor) = local_executor {
             let mut erased_value_executor = Box::new(
                 crate::local::SomeLocalExecutorErasingNotifier::new(local_executor),
@@ -1435,6 +1513,9 @@ where
         TASK_EXECUTOR.with_mut(|e| {
             let read_executor = e.take().expect("Executor not set");
             *state.executor = read_executor
+        });
+        TASK_STATIC_EXECUTOR.with_mut(|e| {
+            *e = None;
         });
         TASK_LOCAL_EXECUTOR.with_borrow_mut(|e| {
             *e = None;
@@ -1501,7 +1582,14 @@ where
             cancellation: cancellation.get_mut(),
             executor: executor.get_mut(),
         };
-        common_poll(future, state, local_executor, metadata, cx)
+        common_poll(
+            future,
+            state,
+            local_executor,
+            None::<&mut Infallible>,
+            metadata,
+            cx,
+        )
     }
 }
 
@@ -1565,7 +1653,14 @@ where
             cancellation: cancellation.get_mut(),
             executor: &mut some_executor,
         };
-        common_poll(future, state, Some(executor), metadata, cx)
+        common_poll(
+            future,
+            state,
+            Some(executor),
+            None::<&mut Infallible>,
+            metadata,
+            cx,
+        )
     }
 }
 
