@@ -853,7 +853,7 @@ mod tests {
                 &mut self,
                 task: Task<
                     Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-                    Box<dyn ObserverNotified<(dyn Any + 'static)>>,
+                    Box<dyn ObserverNotified<dyn Any + 'static>>,
                 >,
             ) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>
             {
@@ -867,7 +867,7 @@ mod tests {
                 &'s mut self,
                 task: Task<
                     Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-                    Box<dyn ObserverNotified<(dyn Any + 'static)>>,
+                    Box<dyn ObserverNotified<dyn Any + 'static>>,
                 >,
             ) -> Box<
                 dyn Future<
