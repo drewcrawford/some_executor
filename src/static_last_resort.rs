@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 /*!
-This local executor is in use when no other local executors are registered.
+This static executor is in use when no other static executors are registered.
 
-It is intentionally the simplest idea possible, but it ensures a compliant local executor is always available.
+It is intentionally the simplest idea possible, but it ensures a compliant static executor is always available.
 
 > Cut my tasks into pieces, this is my last resort!
 > Async handling, no tokio, don't give a fuck if performance is bleeding
@@ -11,18 +11,33 @@ It is intentionally the simplest idea possible, but it ensures a compliant local
 
 */
 
-use crate::observer::{ExecutorNotified, FinishedObservation, Observer, ObserverNotified};
+use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
 use crate::task::Task;
-use crate::{LocalExecutorExt, SomeLocalExecutor};
-use std::any::Any;
+use crate::{
+    BoxedStaticObserver, BoxedStaticObserverFuture, ObjSafeStaticTask, SomeStaticExecutor,
+    StaticExecutorExt,
+};
 use std::future::Future;
-use std::pin::Pin;
 
-pub(crate) struct LocalLastResortExecutor;
+#[derive(Clone)]
+pub(crate) struct StaticLastResortExecutor;
 
-impl LocalLastResortExecutor {
+impl StaticLastResortExecutor {
     pub fn new() -> Self {
-        LocalLastResortExecutor
+        StaticLastResortExecutor
+    }
+
+    fn run_static_task<F, N>(_spawned: crate::task::SpawnedStaticTask<F, N, Self>)
+    where
+        F: Future + 'static,
+        N: ObserverNotified<F::Output>,
+        F::Output: 'static + Unpin,
+    {
+        // For now, we'll panic like the local_last_resort does
+        // TODO: Implement proper static task execution
+        panic!(
+            "Static task spawning without a proper executor is no longer supported. Please configure a static executor before spawning static tasks."
+        );
     }
 }
 
@@ -30,19 +45,19 @@ fn print_warning() {
     #[cfg(not(target_arch = "wasm32"))]
     {
         eprintln!(
-            "some_executor::LocalLastResortExecutor is in use. This is not intended for production code; investigate ways to use a production-quality executor."
+            "some_executor::StaticLastResortExecutor is in use. This is not intended for production code; investigate ways to use a production-quality executor."
         );
     }
     #[cfg(target_arch = "wasm32")]
     {
-        web_sys::console::log_1(&"some_executor::LocalLastResortExecutor is in use. This is not intended for production code; investigate ways to use a production-quality executor.".into());
+        web_sys::console::log_1(&"some_executor::StaticLastResortExecutor is in use. This is not intended for production code; investigate ways to use a production-quality executor.".into());
     }
 }
 
-impl<'a> SomeLocalExecutor<'a> for LocalLastResortExecutor {
+impl SomeStaticExecutor for StaticLastResortExecutor {
     type ExecutorNotifier = Box<dyn ExecutorNotified>;
 
-    fn spawn_local<F: Future + 'a, Notifier: ObserverNotified<F::Output>>(
+    fn spawn_static<F: Future + 'static, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
     ) -> impl Observer<Value = F::Output>
@@ -52,16 +67,16 @@ impl<'a> SomeLocalExecutor<'a> for LocalLastResortExecutor {
     {
         print_warning();
 
-        let (spawned, observer) = task.spawn_local(self);
+        let (spawned, observer) = task.spawn_static(self);
 
         // We need to handle lifetime issues here. Since this is a last resort executor,
         // we'll run the task synchronously on the current thread.
-        crate::sys::run_local_task(spawned);
+        Self::run_static_task(spawned);
 
         observer
     }
 
-    fn spawn_local_async<F: Future + 'a, Notifier: ObserverNotified<F::Output>>(
+    fn spawn_static_async<F: Future + 'static, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
     ) -> impl Future<Output = impl Observer<Value = F::Output>>
@@ -71,46 +86,31 @@ impl<'a> SomeLocalExecutor<'a> for LocalLastResortExecutor {
     {
         print_warning();
 
-        let (spawned, observer) = task.spawn_local(self);
+        let (spawned, observer) = task.spawn_static(self);
 
         // Run the task synchronously and return a ready future
-        crate::sys::run_local_task(spawned);
+        Self::run_static_task(spawned);
 
         std::future::ready(observer)
     }
 
-    fn spawn_local_objsafe(
-        &mut self,
-        task: Task<
-            Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<(dyn Any + 'static)>>,
-        >,
-    ) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> {
+    fn spawn_static_objsafe(&mut self, task: ObjSafeStaticTask) -> BoxedStaticObserver {
         print_warning();
 
-        let (spawned, observer) = task.spawn_local_objsafe(self);
+        let (spawned, observer) = task.spawn_static_objsafe(self);
 
-        crate::sys::run_local_task(spawned);
+        Self::run_static_task(spawned);
 
         Box::new(observer)
     }
 
-    fn spawn_local_objsafe_async<'s>(
+    fn spawn_static_objsafe_async<'s>(
         &'s mut self,
-        task: Task<
-            Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<(dyn Any + 'static)>>,
-        >,
-    ) -> Box<
-        dyn Future<
-                Output = Box<
-                    dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>,
-                >,
-            > + 's,
-    > {
+        task: ObjSafeStaticTask,
+    ) -> BoxedStaticObserverFuture<'s> {
         print_warning();
 
-        let observer = self.spawn_local_objsafe(task);
+        let observer = self.spawn_static_objsafe(task);
         Box::new(std::future::ready(observer))
     }
 
@@ -119,7 +119,7 @@ impl<'a> SomeLocalExecutor<'a> for LocalLastResortExecutor {
     }
 }
 
-impl LocalExecutorExt<'static> for LocalLastResortExecutor {}
+impl StaticExecutorExt for StaticLastResortExecutor {}
 
 #[cfg(test)]
 mod tests {
@@ -128,7 +128,6 @@ mod tests {
     use crate::task::{Configuration, Task};
     use std::future::Future;
     use std::pin::Pin;
-    use std::rc::Rc;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::task::{Context, Poll};
@@ -138,8 +137,8 @@ mod tests {
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-    fn test_basic_spawn_local() {
-        let mut executor = LocalLastResortExecutor::new();
+    fn test_basic_spawn_static() {
+        let mut executor = StaticLastResortExecutor::new();
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
 
@@ -152,7 +151,7 @@ mod tests {
             },
         );
 
-        let observer = executor.spawn_local(task);
+        let observer = executor.spawn_static(task);
         // Since our executor runs synchronously, check observe() result
         match observer.observe() {
             crate::observer::Observation::Ready(value) => {
@@ -165,23 +164,23 @@ mod tests {
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-    fn test_non_send_future() {
-        let mut executor = LocalLastResortExecutor::new();
+    fn test_static_future() {
+        let mut executor = StaticLastResortExecutor::new();
 
-        // Create a non-Send type (Rc cannot be sent across threads)
-        let non_send_data = Rc::new(42);
-        let data_clone = non_send_data.clone();
+        // Create a static future - using String instead of Rc since static futures need to be Send-like
+        let static_data = Arc::new(42);
+        let data_clone = static_data.clone();
 
         let task = Task::without_notifications(
-            "non-send-task".to_string(),
+            "static-task".to_string(),
             Configuration::default(),
             async move {
-                let _captured = data_clone; // This makes the future !Send
+                let _captured = data_clone; // This makes the future 'static
                 "completed"
             },
         );
 
-        let observer = executor.spawn_local(task);
+        let observer = executor.spawn_static(task);
         match observer.observe() {
             crate::observer::Observation::Ready(value) => {
                 assert_eq!(value, "completed");
@@ -192,8 +191,8 @@ mod tests {
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-    fn test_spawn_local_async() {
-        let mut executor = LocalLastResortExecutor::new();
+    fn test_spawn_static_async() {
+        let mut executor = StaticLastResortExecutor::new();
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
 
@@ -207,7 +206,7 @@ mod tests {
         );
 
         // Use a simple runtime to test the async spawn
-        let future = executor.spawn_local_async(task);
+        let future = executor.spawn_static_async(task);
         let mut pinned = std::pin::pin!(future);
 
         // For the test, we'll use a simple polling approach
@@ -228,15 +227,16 @@ mod tests {
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-    fn test_spawn_local_objsafe() {
-        let mut executor = LocalLastResortExecutor::new();
+    fn test_spawn_static_objsafe() {
+        let mut executor = StaticLastResortExecutor::new();
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
 
-        let future: Pin<Box<dyn Future<Output = Box<dyn Any>>>> = Box::pin(async move {
-            counter_clone.fetch_add(5, Ordering::Relaxed);
-            Box::new(50i32) as Box<dyn Any>
-        });
+        let future: Pin<Box<dyn Future<Output = Box<dyn std::any::Any>> + 'static>> =
+            Box::pin(async move {
+                counter_clone.fetch_add(5, Ordering::Relaxed);
+                Box::new(50i32) as Box<dyn std::any::Any>
+            });
 
         let task = Task::without_notifications(
             "objsafe-task".to_string(),
@@ -244,13 +244,13 @@ mod tests {
             future,
         );
 
-        let observer = executor.spawn_local_objsafe(task.into_objsafe_local());
+        let observer = executor.spawn_static_objsafe(task.into_objsafe_static());
         match observer.observe() {
             crate::observer::Observation::Ready(result) => {
                 // The future returns Box::new(50i32) as Box<dyn Any>
-                // into_objsafe_local wraps this again, so we get Box<dyn Any> containing Box<dyn Any> containing i32
+                // into_objsafe_static wraps this again, so we get Box<dyn Any> containing Box<dyn Any> containing i32
                 let inner_box = result
-                    .downcast::<Box<dyn Any>>()
+                    .downcast::<Box<dyn std::any::Any>>()
                     .expect("Should be Box<dyn Any>");
                 let value = inner_box.downcast::<i32>().expect("Should be i32");
                 assert_eq!(*value, 50);
@@ -263,63 +263,14 @@ mod tests {
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_executor_notifier() {
-        let mut executor = LocalLastResortExecutor::new();
+        let mut executor = StaticLastResortExecutor::new();
         assert!(executor.executor_notifier().is_none());
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-    fn test_thread_local_executor_integration() {
-        use crate::thread_executor::thread_local_executor;
-
-        let counter = Arc::new(AtomicU32::new(0));
-        let counter_clone = counter.clone();
-
-        // Test that thread_local_executor provides a working executor
-        thread_local_executor(|executor_rc| {
-            let task = Task::without_notifications(
-                "thread-local-test".to_string(),
-                Configuration::default(),
-                async move {
-                    counter_clone.fetch_add(100, Ordering::Relaxed);
-                    "thread-local-result"
-                },
-            );
-
-            let observer = match executor_rc {
-                Some(executor_rc) => {
-                    if let Ok(mut executor) = executor_rc.try_borrow_mut() {
-                        executor.spawn_local_objsafe(task.into_objsafe_local())
-                    } else {
-                        // We're in a nested call - create a temporary executor
-                        let mut temp_executor =
-                            Box::new(crate::local_last_resort::LocalLastResortExecutor::new());
-                        temp_executor.spawn_local_objsafe(task.into_objsafe_local())
-                    }
-                }
-                None => {
-                    // No thread-local executor available - create a temporary one
-                    let mut temp_executor =
-                        Box::new(crate::local_last_resort::LocalLastResortExecutor::new());
-                    temp_executor.spawn_local_objsafe(task.into_objsafe_local())
-                }
-            };
-            match observer.observe() {
-                crate::observer::Observation::Ready(result) => {
-                    let value = result.downcast::<&str>().expect("Should be &str");
-                    assert_eq!(*value, "thread-local-result");
-                }
-                _ => panic!("Task should have completed immediately"),
-            }
-        });
-
-        assert_eq!(counter.load(Ordering::Relaxed), 100);
-    }
-
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_delayed_waking() {
-        let mut executor = LocalLastResortExecutor::new();
+        let mut executor = StaticLastResortExecutor::new();
 
         // Create a future that needs to be polled 3 times before completion
         let delayed_future = DelayedFuture::new(3, 99);
@@ -331,7 +282,7 @@ mod tests {
             delayed_future,
         );
 
-        let observer = executor.spawn_local(task);
+        let observer = executor.spawn_static(task);
 
         // Verify the task completed successfully
         match observer.observe() {

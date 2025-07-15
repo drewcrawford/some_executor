@@ -109,6 +109,7 @@ pub mod hint;
 mod last_resort;
 mod local;
 pub mod observer;
+mod static_last_resort;
 mod sys;
 pub mod task;
 pub mod thread_executor;
