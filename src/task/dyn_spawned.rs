@@ -46,7 +46,7 @@ pub trait DynLocalSpawnedTask<Executor> {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         executor: &'executor mut Executor,
-        some_executor: Option<Box<(dyn SomeExecutor<ExecutorNotifier = Infallible> + 'static)>>,
+        some_executor: Option<Box<dyn SomeExecutor<ExecutorNotifier = Infallible> + 'static>>,
     ) -> std::task::Poll<()>;
 
     /// Returns the earliest time this task should be polled.
@@ -76,7 +76,7 @@ where
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         executor: &'ex mut Executor,
-        some_executor: Option<Box<(dyn SomeExecutor<ExecutorNotifier = Infallible> + 'static)>>,
+        some_executor: Option<Box<dyn SomeExecutor<ExecutorNotifier = Infallible> + 'static>>,
     ) -> std::task::Poll<()> {
         SpawnedLocalTask::poll(self, cx, executor, some_executor)
     }

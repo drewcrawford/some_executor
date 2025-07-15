@@ -70,7 +70,7 @@ impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>>
         &mut self,
         task: Task<
             Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<(dyn Any + 'static)>>,
+            Box<dyn ObserverNotified<dyn Any + 'static>>,
         >,
     ) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> {
         self.executor.spawn_local_objsafe(task)
@@ -80,7 +80,7 @@ impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>>
         &'s mut self,
         task: Task<
             Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<(dyn Any + 'static)>>,
+            Box<dyn ObserverNotified<dyn Any + 'static>>,
         >,
     ) -> Box<
         dyn Future<
@@ -157,7 +157,7 @@ impl<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalE
         &mut self,
         task: Task<
             Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<(dyn Any + 'static)>>,
+            Box<dyn ObserverNotified<dyn Any + 'static>>,
         >,
     ) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> {
         self.executor.spawn_local_objsafe(task)
@@ -167,7 +167,7 @@ impl<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalE
         &'s mut self,
         task: Task<
             Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<(dyn Any + 'static)>>,
+            Box<dyn ObserverNotified<dyn Any + 'static>>,
         >,
     ) -> Box<
         dyn Future<
@@ -266,7 +266,7 @@ impl<'a> SomeLocalExecutor<'a> for UnsafeErasedLocalExecutor {
         &mut self,
         task: Task<
             Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<(dyn Any + 'static)>>,
+            Box<dyn ObserverNotified<dyn Any + 'static>>,
         >,
     ) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> {
         let ex = self.executor();
@@ -277,7 +277,7 @@ impl<'a> SomeLocalExecutor<'a> for UnsafeErasedLocalExecutor {
         &'s mut self,
         task: Task<
             Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<(dyn Any + 'static)>>,
+            Box<dyn ObserverNotified<dyn Any + 'static>>,
         >,
     ) -> Box<
         dyn Future<

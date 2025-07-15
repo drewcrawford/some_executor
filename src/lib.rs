@@ -153,7 +153,7 @@ pub type BoxedSendObserverFuture<'s> = Box<dyn Future<Output = BoxedSendObserver
 pub type BoxedLocalFuture = Pin<Box<dyn Future<Output = Box<dyn Any>>>>;
 
 /// Type alias for a boxed observer notifier that handles Any values (non-Send)
-pub type BoxedLocalObserverNotifier = Box<dyn ObserverNotified<(dyn Any + 'static)>>;
+pub type BoxedLocalObserverNotifier = Box<dyn ObserverNotified<dyn Any + 'static>>;
 
 /// Type alias for a Task that can be used with local object-safe spawning
 pub type ObjSafeLocalTask = Task<BoxedLocalFuture, BoxedLocalObserverNotifier>;
@@ -169,7 +169,7 @@ pub type BoxedLocalObserverFuture<'s> = Box<dyn Future<Output = BoxedLocalObserv
 pub type BoxedStaticFuture = Pin<Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>>;
 
 /// Type alias for a boxed observer notifier that handles 'static Any values (non-Send)
-pub type BoxedStaticObserverNotifier = Box<dyn ObserverNotified<(dyn Any + 'static)>>;
+pub type BoxedStaticObserverNotifier = Box<dyn ObserverNotified<dyn Any + 'static>>;
 
 /// Type alias for a Task that can be used with static object-safe spawning
 pub type ObjSafeStaticTask = Task<BoxedStaticFuture, BoxedStaticObserverNotifier>;
@@ -584,7 +584,7 @@ impl<'future> SomeLocalExecutor<'future> for Infallible {
         &mut self,
         _task: Task<
             Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<(dyn Any + 'static)>>,
+            Box<dyn ObserverNotified<dyn Any + 'static>>,
         >,
     ) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> {
         unimplemented!()
@@ -594,7 +594,7 @@ impl<'future> SomeLocalExecutor<'future> for Infallible {
         &'s mut self,
         _task: Task<
             Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<(dyn Any + 'static)>>,
+            Box<dyn ObserverNotified<dyn Any + 'static>>,
         >,
     ) -> Box<
         dyn Future<

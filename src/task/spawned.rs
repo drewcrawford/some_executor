@@ -330,7 +330,7 @@ impl<F: Future, ONotifier, Executor> SpawnedStaticTask<F, ONotifier, Executor> {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         static_executor: Option<&mut S>,
-        mut some_executor: Option<Box<(dyn SomeExecutor<ExecutorNotifier = Infallible> + 'static)>>,
+        mut some_executor: Option<Box<dyn SomeExecutor<ExecutorNotifier = Infallible> + 'static>>,
     ) -> std::task::Poll<()>
     where
         ONotifier: ObserverNotified<F::Output>,
@@ -578,7 +578,7 @@ where
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         executor: &mut Executor,
-        mut some_executor: Option<Box<(dyn SomeExecutor<ExecutorNotifier = Infallible> + 'static)>>,
+        mut some_executor: Option<Box<dyn SomeExecutor<ExecutorNotifier = Infallible> + 'static>>,
     ) -> std::task::Poll<()> {
         let poll_after = self.poll_after();
         //destructure

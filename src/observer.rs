@@ -530,10 +530,10 @@ impl<T> ObserverNotified<T> for Infallible {
     }
 }
 //support unboxing
-impl ObserverNotified<Box<(dyn std::any::Any + 'static)>>
-    for Box<dyn ObserverNotified<(dyn std::any::Any + 'static)>>
+impl ObserverNotified<Box<dyn std::any::Any + 'static>>
+    for Box<dyn ObserverNotified<dyn std::any::Any + 'static>>
 {
-    fn notify(&mut self, value: &Box<(dyn Any + 'static)>) {
+    fn notify(&mut self, value: &Box<dyn Any + 'static>) {
         let r = Box::as_mut(self);
         r.notify(value);
     }
@@ -541,10 +541,10 @@ impl ObserverNotified<Box<(dyn std::any::Any + 'static)>>
 
 //I guess a few ways?
 
-impl ObserverNotified<Box<(dyn Any + Send + 'static)>>
-    for Box<dyn ObserverNotified<(dyn Any + Send + 'static)> + Send>
+impl ObserverNotified<Box<dyn Any + Send + 'static>>
+    for Box<dyn ObserverNotified<dyn Any + Send + 'static> + Send>
 {
-    fn notify(&mut self, value: &Box<(dyn Any + Send + 'static)>) {
+    fn notify(&mut self, value: &Box<dyn Any + Send + 'static>) {
         let r = Box::as_mut(self);
         r.notify(value);
     }
