@@ -470,6 +470,49 @@ impl<F: Future<Output = ()>, N> Task<F, N> {
     {
         todo!("Not yet implemented");
     }
+
+    /// Spawns the task onto the current thread's static executor and detaches the observer.
+    ///
+    /// This is a convenience method for fire-and-forget tasks that don't return a value
+    /// and need to be executed on the current thread's static executor. The task will be
+    /// spawned using [`thread_static_executor`](crate::thread_executor::thread_static_executor)
+    /// and the observer will be automatically detached.
+    ///
+    /// # Requirements
+    ///
+    /// - The future must output `()`
+    /// - The future must be `'static` (but doesn't need to be `Send`)
+    /// - The notifier must implement `ObserverNotified<()>` and be `'static`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, Configuration};
+    ///
+    /// # fn example() {
+    /// let task = Task::without_notifications(
+    ///     "static-work".to_string(),
+    ///     Configuration::default(),
+    ///     async {
+    ///         println!("Running on static executor");
+    ///     },
+    /// );
+    ///
+    /// // Spawn on the thread's static executor
+    /// task.spawn_current_static();
+    /// # }
+    /// ```
+    pub fn spawn_current_static(self)
+    where
+        F: 'static,
+        N: ObserverNotified<()> + 'static,
+    {
+        crate::thread_executor::thread_static_executor(|executor| {
+            executor
+                .spawn_static_objsafe(self.into_objsafe_static())
+                .detach();
+        });
+    }
 }
 
 impl
