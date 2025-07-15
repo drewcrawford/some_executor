@@ -13,6 +13,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+#[cfg(test)]
 pub use wasm_thread as thread;
 
 /// WASM-specific newtype that wraps SpawnedStaticTask to implement Future
@@ -57,6 +58,7 @@ where
 }
 
 /// Helper to run a SpawnedLocalTask to completion using WASM32-compatible mechanisms
+#[allow(dead_code)]
 pub(crate) fn run_local_task<F, N, E>(_spawned: crate::task::SpawnedLocalTask<F, N, E>)
 where
     F: Future,

@@ -11,8 +11,10 @@ use std::future::Future;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::task::{Context, Poll, RawWaker, RawWakerVTable};
-
+#[cfg(test)]
+pub use std::thread;
 /// Helper to run a SpawnedLocalTask to completion using condvar/mutex
+#[allow(dead_code)]
 pub(crate) fn run_local_task<F, N, E>(_spawned: crate::task::SpawnedLocalTask<F, N, E>)
 where
     F: Future,

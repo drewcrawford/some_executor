@@ -172,22 +172,19 @@ impl<UnderlyingNotifier: ExecutorNotified> SomeStaticExecutor
         StaticDowncastObserver::new(observer)
     }
 
-    fn spawn_static_async<F, Notifier: ObserverNotified<F::Output>>(
+    async fn spawn_static_async<F, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
-    ) -> impl Future<Output = impl Observer<Value = F::Output>>
+    ) -> impl Observer<Value = F::Output>
     where
         Self: Sized,
         F: Future + 'static,
         F::Output: 'static + Unpin,
     {
-        #[allow(clippy::async_yields_async)]
-        async move {
-            let underlying = self.as_mut();
-            let objsafe = task.into_objsafe_static();
-            let observer = underlying.spawn_static_objsafe(objsafe);
-            StaticDowncastObserver::new(observer)
-        }
+        let underlying = self.as_mut();
+        let objsafe = task.into_objsafe_static();
+        let observer = underlying.spawn_static_objsafe(objsafe);
+        StaticDowncastObserver::new(observer)
     }
 
     fn spawn_static_objsafe(

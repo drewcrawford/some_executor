@@ -113,27 +113,6 @@ use std::pin::Pin;
 use std::sync::atomic::AtomicU64;
 use std::task::Poll;
 
-// Type aliases for complex types to satisfy clippy::type_complexity warnings
-
-/// Type alias for a boxed future that outputs boxed Any and is Send + 'static
-type BoxedSendFuture =
-    Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>;
-
-/// Type alias for a boxed observer notifier that handles Send Any values
-type BoxedSendObserverNotifier = Box<dyn ObserverNotified<dyn Any + Send> + Send>;
-
-/// Type alias for a Task that can be used with object-safe spawning
-type ObjSafeTask = Task<BoxedSendFuture, BoxedSendObserverNotifier>;
-
-/// Type alias for a boxed future that outputs boxed Any (non-Send)
-type BoxedLocalFuture = Pin<Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>>;
-
-/// Type alias for a boxed observer notifier that handles Any values (non-Send)
-type BoxedLocalObserverNotifier = Box<dyn ObserverNotified<dyn Any + 'static>>;
-
-/// Type alias for a Task that can be used with local object-safe spawning
-type ObjSafeLocalTask = Task<BoxedLocalFuture, BoxedLocalObserverNotifier>;
-
 /// A unique identifier for a task.
 ///
 /// `TaskID` provides a way to uniquely identify and track tasks throughout their lifecycle.
