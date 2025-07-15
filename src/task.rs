@@ -1067,15 +1067,16 @@ impl<F: Future, N> Task<F, N> {
     ///
     /// # struct MyStaticExecutor;
     /// # impl SomeStaticExecutor for MyStaticExecutor {
-    /// #     type ExecutorNotifier = Infallible;
+    /// #     type ExecutorNotifier = Box<dyn some_executor::observer::ExecutorNotified>;
     /// #     fn spawn_static<F: Future, N: ObserverNotified<F::Output>>(&mut self, task: some_executor::task::Task<F, N>) -> impl Observer<Value = F::Output> where F: 'static, F::Output: 'static {
-    /// #         todo!() as TypedObserver::<F::Output, Infallible>
+    /// #         todo!() as TypedObserver::<F::Output, Box<dyn some_executor::observer::ExecutorNotified>>
     /// #     }
     /// #     fn spawn_static_async<F: Future, N: ObserverNotified<F::Output>>(&mut self, task: some_executor::task::Task<F, N>) -> impl Future<Output = impl Observer<Value = F::Output>> where F: 'static, F::Output: 'static {
-    /// #         async { todo!() as TypedObserver::<F::Output, Infallible> }
+    /// #         async { todo!() as TypedObserver::<F::Output, Box<dyn some_executor::observer::ExecutorNotified>> }
     /// #     }
     /// #     fn spawn_static_objsafe(&mut self, task: some_executor::task::Task<Pin<Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> { todo!() }
     /// #     fn spawn_static_objsafe_async<'s>(&'s mut self, task: some_executor::task::Task<Pin<Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>>, Box<dyn ObserverNotified<(dyn Any + 'static)>>>) -> Box<dyn Future<Output = Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>> + 's> { Box::new(async { todo!() }) }
+    /// #     fn clone_box(&self) -> Box<some_executor::DynStaticExecutor> { todo!() }
     /// #     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> { None }
     /// # }
     /// let mut executor = MyStaticExecutor;

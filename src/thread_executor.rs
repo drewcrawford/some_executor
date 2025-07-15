@@ -521,15 +521,16 @@ pub fn set_thread_static_executor(
 /// # struct MyNotifier;
 /// # impl some_executor::observer::ExecutorNotified for MyNotifier { fn request_cancel(&mut self) {} }
 /// # impl some_executor::SomeStaticExecutor for MyStaticExecutor {
-/// #     type ExecutorNotifier = MyNotifier;
+/// #     type ExecutorNotifier = Box<dyn some_executor::observer::ExecutorNotified>;
 /// #     fn spawn_static<F, N>(&mut self, _: some_executor::task::Task<F, N>) -> impl some_executor::observer::Observer<Value = F::Output>
 /// #     where F: std::future::Future + 'static, N: some_executor::observer::ObserverNotified<F::Output>, F::Output: Unpin + 'static
-/// #     { todo!() as some_executor::observer::TypedObserver<F::Output,MyNotifier>}
+/// #     { todo!() as some_executor::observer::TypedObserver<F::Output,Box<dyn some_executor::observer::ExecutorNotified>>}
 /// #     fn spawn_static_async<F, N>(&mut self, _: some_executor::task::Task<F, N>) -> impl std::future::Future<Output = impl some_executor::observer::Observer<Value = F::Output>>
 /// #     where F: std::future::Future + 'static, N: some_executor::observer::ObserverNotified<F::Output>, F::Output: Unpin + 'static
-/// #     { async { todo!() as some_executor::observer::TypedObserver<F::Output,MyNotifier> } }
+/// #     { async { todo!() as some_executor::observer::TypedObserver<F::Output,Box<dyn some_executor::observer::ExecutorNotified>> } }
 /// #     fn spawn_static_objsafe(&mut self, _: some_executor::ObjSafeStaticTask) -> some_executor::BoxedStaticObserver { todo!() }
 /// #     fn spawn_static_objsafe_async<'s>(&'s mut self, _: some_executor::ObjSafeStaticTask) -> some_executor::BoxedStaticObserverFuture<'s> { todo!() }
+/// #     fn clone_box(&self) -> Box<some_executor::DynStaticExecutor> { todo!() }
 /// #     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> { None }
 /// # }
 /// // Use a custom static executor

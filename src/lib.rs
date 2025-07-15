@@ -486,6 +486,13 @@ pub trait SomeStaticExecutor: 'static {
     ) -> BoxedStaticObserverFuture<'s>;
 
     /**
+    Clones the executor.
+
+    The returned value will spawn tasks onto the same executor.
+    */
+    fn clone_box(&self) -> Box<DynStaticExecutor>;
+
+    /**
     Produces an executor notifier.
     */
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
@@ -503,9 +510,20 @@ The appropriate type for a dynamically-dispatched executor.
 */
 pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier = Infallible>;
 
+/**
+The appropriate type for a dynamically-dispatched static executor.
+*/
+pub type DynStaticExecutor = dyn SomeStaticExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>;
+
 impl Debug for DynExecutor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("DynExecutor")
+    }
+}
+
+impl Debug for DynStaticExecutor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DynStaticExecutor")
     }
 }
 
@@ -635,6 +653,10 @@ impl SomeStaticExecutor for Infallible {
         &'s mut self,
         _task: ObjSafeStaticTask,
     ) -> BoxedStaticObserverFuture<'s> {
+        unimplemented!()
+    }
+
+    fn clone_box(&self) -> Box<DynStaticExecutor> {
         unimplemented!()
     }
 

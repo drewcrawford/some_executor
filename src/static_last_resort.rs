@@ -14,8 +14,8 @@ It is intentionally the simplest idea possible, but it ensures a compliant stati
 use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
 use crate::task::Task;
 use crate::{
-    BoxedStaticObserver, BoxedStaticObserverFuture, ObjSafeStaticTask, SomeStaticExecutor,
-    StaticExecutorExt,
+    BoxedStaticObserver, BoxedStaticObserverFuture, DynStaticExecutor, ObjSafeStaticTask,
+    SomeStaticExecutor, StaticExecutorExt,
 };
 use std::future::Future;
 
@@ -99,6 +99,10 @@ impl SomeStaticExecutor for StaticLastResortExecutor {
 
         let observer = self.spawn_static_objsafe(task);
         Box::new(std::future::ready(observer))
+    }
+
+    fn clone_box(&self) -> Box<DynStaticExecutor> {
+        Box::new(self.clone())
     }
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {

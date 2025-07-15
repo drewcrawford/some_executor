@@ -10,7 +10,8 @@ notifier types to be used with a unified interface.
 use crate::observer::{ExecutorNotified, Observer, ObserverNotified};
 use crate::task::Task;
 use crate::{
-    BoxedStaticObserver, BoxedStaticObserverFuture, ObjSafeStaticTask, SomeStaticExecutor,
+    BoxedStaticObserver, BoxedStaticObserverFuture, DynStaticExecutor, ObjSafeStaticTask,
+    SomeStaticExecutor,
 };
 use std::future::Future;
 use std::marker::PhantomData;
@@ -74,6 +75,11 @@ impl<UnderlyingExecutor: SomeStaticExecutor> SomeStaticExecutor
             let objsafe_spawn_fut = self.executor.spawn_static_objsafe_async(task);
             Box::into_pin(objsafe_spawn_fut).await
         })
+    }
+
+    fn clone_box(&self) -> Box<DynStaticExecutor> {
+        // This adapter doesn't support cloning. Use StaticExecutorExt for Clone support.
+        unimplemented!()
     }
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
