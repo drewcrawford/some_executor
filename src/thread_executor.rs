@@ -9,12 +9,14 @@
 //!
 //! # Overview
 //!
-//! The module supports two types of thread-local executors:
+//! The module supports three types of thread-local executors:
 //!
 //! - **Regular executors** (`DynExecutor`): Can spawn `Send` futures and are typically
 //!   used when the executor can move work between threads.
 //! - **Local executors** (`SomeLocalExecutor`): Can spawn `!Send` futures and execute
 //!   them on the current thread only.
+//! - **Static executors** (`SomeStaticExecutor`): Can spawn `'static` futures that do not
+//!   need to be `Send`, suitable for static data with thread-local execution.
 //!
 //! # Usage in Executor Discovery
 //!
@@ -43,6 +45,24 @@
 //!     if let Some(exec) = executor {
 //!         println!("Thread has an executor");
 //!     }
+//! });
+//! # }
+//! ```
+//!
+//! ## Setting a thread-static executor
+//!
+//! ```
+//! use some_executor::thread_executor::{set_thread_static_executor, thread_static_executor};
+//!
+//! # fn example() {
+//! # let my_static_executor: Box<dyn some_executor::SomeStaticExecutor<ExecutorNotifier = Box<dyn some_executor::observer::ExecutorNotified>>> = todo!();
+//! // Set a static executor for the current thread
+//! set_thread_static_executor(my_static_executor);
+//!
+//! // Later, access the thread-static executor (always returns a valid executor)
+//! thread_static_executor(|executor| {
+//!     // executor is always valid - either user-provided or last resort
+//!     println!("Thread has a static executor");
 //! });
 //! # }
 //! ```
@@ -81,7 +101,7 @@
 //! for regular executors, as they may be cloned and shared across async contexts.
 
 use crate::observer::ExecutorNotified;
-use crate::{DynExecutor, SomeLocalExecutor};
+use crate::{DynExecutor, SomeLocalExecutor, SomeStaticExecutor};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -98,9 +118,14 @@ type ThreadLocalExecutor = RefCell<
     >,
 >;
 
+/// Type alias for a thread-static executor that can handle static tasks
+type ThreadStaticExecutor =
+    RefCell<Option<Box<dyn SomeStaticExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>>>;
+
 thread_local! {
     static THREAD_EXECUTOR: RefCell<Option<Box<DynExecutor>>> = RefCell::new(None);
     static THREAD_LOCAL_EXECUTOR: ThreadLocalExecutor = RefCell::new(None);
+    static THREAD_STATIC_EXECUTOR: ThreadStaticExecutor = RefCell::new(None);
 }
 
 /// Accesses the executor that is available for the current thread.
@@ -381,4 +406,143 @@ pub fn set_thread_local_executor_adapting_notifier<E: SomeLocalExecutor<'static>
 ) {
     let adapter = crate::local::OwnedSomeLocalExecutorErasingNotifier::new(runtime);
     set_thread_local_executor(Box::new(adapter));
+}
+
+/// Accesses the static executor that is available for the current thread.
+///
+/// This function provides safe access to the thread-static executor. If a user-provided
+/// executor has been set via `set_thread_static_executor`, it will be used. Otherwise,
+/// the static last resort executor will be used as a fallback, ensuring that a valid
+/// executor is always available.
+///
+/// # Parameters
+///
+/// - `c`: A closure that receives a reference to the thread's static executor.
+///   The closure should return a value of type `R`.
+///
+/// # Returns
+///
+/// Returns whatever value the closure produces.
+///
+/// # Examples
+///
+/// ```
+/// use some_executor::thread_executor::{thread_static_executor, set_thread_static_executor};
+///
+/// # fn example() {
+/// // Always get a valid static executor (will use last resort if none set)
+/// let result = thread_static_executor(|exec| {
+///     // exec is always valid - either user-provided or last resort
+///     exec.executor_notifier().is_some()
+/// });
+/// println!("Executor notifier available: {}", result);
+/// # }
+/// ```
+pub fn thread_static_executor<R>(
+    c: impl FnOnce(&mut dyn SomeStaticExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>) -> R,
+) -> R {
+    THREAD_STATIC_EXECUTOR.with(|e| {
+        let mut borrowed = e.borrow_mut();
+        if let Some(executor) = borrowed.as_mut() {
+            c(executor.as_mut())
+        } else {
+            // Use the static last resort executor as fallback
+            let mut last_resort = crate::static_last_resort::StaticLastResortExecutor::new();
+            c(&mut last_resort)
+        }
+    })
+}
+
+/// Sets the static executor for the current thread.
+///
+/// This function associates a static executor with the current thread. Static executors
+/// can spawn `'static` futures that do not need to be `Send`, making them suitable for
+/// scenarios where you have static data but need thread-local execution.
+///
+/// # Parameters
+///
+/// - `runtime`: A boxed static executor with a type-erased notifier.
+///   The executor will be stored in thread-local storage.
+///
+/// # Note
+///
+/// Setting a new executor will replace any previously set static executor for this thread.
+/// There is no way to "unset" an executor once set; you can only replace it with
+/// a different one.
+///
+/// # Examples
+///
+/// ```
+/// use some_executor::thread_executor::{set_thread_static_executor, thread_static_executor};
+///
+/// # fn example() {
+/// # let executor: Box<dyn some_executor::SomeStaticExecutor<ExecutorNotifier = Box<dyn some_executor::observer::ExecutorNotified>>> = todo!();
+/// // Set a thread-static executor
+/// set_thread_static_executor(executor);
+///
+/// // Verify it can be accessed (will always have a valid executor)
+/// thread_static_executor(|exec| {
+///     // exec is always valid - either user-provided or last resort
+///     let _notifier = exec.executor_notifier();
+/// });
+/// # }
+/// ```
+pub fn set_thread_static_executor(
+    runtime: Box<dyn SomeStaticExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>>,
+) {
+    THREAD_STATIC_EXECUTOR.with(|e| {
+        *e.borrow_mut() = Some(runtime);
+    });
+}
+
+/// Sets the static executor for the current thread with automatic notifier adaptation.
+///
+/// This is a convenience function that wraps the provided executor in an adapter
+/// that erases the specific notifier type to `Box<dyn ExecutorNotified>`. This
+/// allows you to use static executors with different notifier types without manually
+/// performing the type erasure.
+///
+/// # Parameters
+///
+/// - `runtime`: A static executor that implements `SomeStaticExecutor`. The
+///   executor's specific notifier type will be erased.
+///
+/// # Type Parameters
+///
+/// - `E`: The concrete type of the static executor. Must implement `SomeStaticExecutor`
+///   and have a `'static` lifetime.
+///
+/// # Examples
+///
+/// ```no_run
+/// use some_executor::thread_executor::set_thread_static_executor_adapting_notifier;
+///
+/// # struct MyStaticExecutor;
+/// # struct MyNotifier;
+/// # impl some_executor::observer::ExecutorNotified for MyNotifier { fn request_cancel(&mut self) {} }
+/// # impl some_executor::SomeStaticExecutor for MyStaticExecutor {
+/// #     type ExecutorNotifier = MyNotifier;
+/// #     fn spawn_static<F, N>(&mut self, _: some_executor::task::Task<F, N>) -> impl some_executor::observer::Observer<Value = F::Output>
+/// #     where F: std::future::Future + 'static, N: some_executor::observer::ObserverNotified<F::Output>, F::Output: Unpin + 'static
+/// #     { todo!() as some_executor::observer::TypedObserver<F::Output,MyNotifier>}
+/// #     fn spawn_static_async<F, N>(&mut self, _: some_executor::task::Task<F, N>) -> impl std::future::Future<Output = impl some_executor::observer::Observer<Value = F::Output>>
+/// #     where F: std::future::Future + 'static, N: some_executor::observer::ObserverNotified<F::Output>, F::Output: Unpin + 'static
+/// #     { async { todo!() as some_executor::observer::TypedObserver<F::Output,MyNotifier> } }
+/// #     fn spawn_static_objsafe(&mut self, _: some_executor::ObjSafeStaticTask) -> some_executor::BoxedStaticObserver { todo!() }
+/// #     fn spawn_static_objsafe_async<'s>(&'s mut self, _: some_executor::ObjSafeStaticTask) -> some_executor::BoxedStaticObserverFuture<'s> { todo!() }
+/// #     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> { None }
+/// # }
+/// // Use a custom static executor
+/// let executor = MyStaticExecutor;
+/// set_thread_static_executor_adapting_notifier(executor);
+/// ```
+///
+/// # Implementation Note
+///
+/// This function uses an internal adapter type to erase the executor's specific
+/// notifier type. This allows for a uniform interface while preserving the
+/// executor's functionality.
+pub fn set_thread_static_executor_adapting_notifier<E: SomeStaticExecutor + 'static>(runtime: E) {
+    let adapter = crate::static_support::OwnedSomeStaticExecutorErasingNotifier::new(runtime);
+    set_thread_static_executor(Box::new(adapter));
 }
