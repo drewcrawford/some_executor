@@ -13,6 +13,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+pub use wasm_thread as thread;
 
 /// WASM-specific newtype that wraps SpawnedStaticTask to implement Future
 struct WasmStaticTaskFuture<F, N, E>

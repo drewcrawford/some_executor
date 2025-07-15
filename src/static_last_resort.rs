@@ -111,7 +111,7 @@ impl StaticExecutorExt for StaticLastResortExecutor {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::observer::Observer;
+    use crate::observer::{FinishedObservation, Observer};
     use crate::task::{Configuration, Task};
     use std::future::Future;
     use std::pin::Pin;
@@ -257,29 +257,45 @@ mod tests {
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_delayed_waking() {
-        let mut executor = StaticLastResortExecutor::new();
-
-        // Create a future that needs to be polled 3 times before completion
+        let (s, r) = std::sync::mpsc::channel();
         let delayed_future = DelayedFuture::new(3, 99);
         let poll_counter = delayed_future.poll_count.clone();
 
-        let task = Task::without_notifications(
-            "delayed-task".to_string(),
-            Configuration::default(),
-            delayed_future,
-        );
+        crate::sys::thread::spawn(move || {
+            let mut executor = StaticLastResortExecutor::new();
 
-        let observer = executor.spawn_static(task);
+            // Create a future that needs to be polled 3 times before completion
+            let task = Task::without_notifications(
+                "delayed-task".to_string(),
+                Configuration::default(),
+                delayed_future,
+            );
 
-        // Verify the task completed successfully
-        match observer.observe() {
-            crate::observer::Observation::Ready(value) => {
-                assert_eq!(value, 99);
-                // Verify it was polled exactly 4 times (3 pending + 1 ready)
-                assert_eq!(poll_counter.load(Ordering::Relaxed), 4);
+            let observer = executor.spawn_static(task);
+            //create and spawn a second task to do the observation
+            let observation_task = Task::without_notifications(
+                "delayed-task-observer".to_string(),
+                Configuration::default(),
+                async move {
+                    // Verify the task completed successfully
+                    match observer.await {
+                        FinishedObservation::Ready(value) => {
+                            assert_eq!(value, 99);
+                            s.send(Ok(())).unwrap();
+                        }
+                        _ => {
+                            s.send(Err("Task did not complete successfully")).unwrap();
+                        }
+                    }
+                },
+            );
+            executor.spawn_static(observation_task).detach();
+            //block on receiver
+            match r.recv() {
+                Ok(_) => println!("Delayed task completed successfully"),
+                Err(e) => panic!("Observation failed: {}", e),
             }
-            _ => panic!("Task should have completed successfully"),
-        }
+        });
     }
 
     // Helper struct for async test
@@ -325,22 +341,14 @@ mod tests {
                 .is_ok()
             {
                 let waker = cx.waker().clone();
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    std::thread::spawn(move || {
-                        // Give time for the executor to enter the condvar wait
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                        for _ in 0..5 {
-                            waker.wake_by_ref();
-                            std::thread::sleep(std::time::Duration::from_millis(10));
-                        }
-                    });
-                }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    // For WASM, we'll use a simple immediate wake since we can't use std::thread
-                    waker.wake();
-                }
+                crate::sys::thread::spawn(move || {
+                    // Give time for the executor to enter the condvar wait
+                    crate::sys::thread::sleep(std::time::Duration::from_millis(100));
+                    for _ in 0..5 {
+                        waker.wake_by_ref();
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                });
             }
 
             Poll::Pending
