@@ -178,7 +178,7 @@ where
     where
         L: SomeLocalExecutor<'l>,
     {
-        SpawnedTask::poll(self, cx, local_executor)
+        self.poll(cx, local_executor)
     }
 
     fn poll_after(&self) -> crate::sys::Instant {
