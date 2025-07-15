@@ -10,25 +10,15 @@
 
 use crate::observer::ObserverNotified;
 use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-
-type TaskType =
-    crate::task::SpawnedLocalTask<F, N, crate::local_last_resort::LocalLastResortExecutor>;
 
 /// Helper to run a SpawnedLocalTask to completion using WASM32-compatible mechanisms
-///
-/// This function will be implemented to avoid using std::sync::Condvar and std::sync::Mutex,
-/// which fail on the WASM32 main thread due to atomics.wait restrictions.
-///
-/// TODO: Implement using one of these approaches:
-/// - wasm_bindgen_futures::spawn_local with state coordination
-/// - Polling loop with setTimeout-based yields
-/// - Message passing with async coordination
-pub(crate) fn run_local_task<F, N>(spawned: TaskType)
+pub(crate) fn run_local_task<F, N, E>(_spawned: crate::task::SpawnedLocalTask<F, N, E>)
 where
     F: Future,
     N: ObserverNotified<F::Output>,
+    E: for<'a> crate::SomeLocalExecutor<'a>,
 {
-    todo!()
+    panic!(
+        "Local task spawning without a proper executor is no longer supported. Please configure a local executor before spawning local tasks."
+    );
 }

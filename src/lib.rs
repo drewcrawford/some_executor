@@ -108,7 +108,6 @@ pub mod hint;
 #[cfg(not(target_arch = "wasm32"))]
 mod last_resort;
 mod local;
-mod local_last_resort;
 pub mod observer;
 mod sys;
 pub mod task;

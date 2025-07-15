@@ -203,8 +203,8 @@ pub fn set_thread_executor(runtime: Box<DynExecutor>) {
 /// Local executors can only execute futures on the current thread and are useful for
 /// working with thread-local data or resources that cannot be safely moved between threads.
 ///
-/// If no executor has been set for the thread, a LocalLastResortExecutor will be created
-/// automatically. This ensures that local tasks can always be spawned.
+/// If no executor has been set for the thread, the function will panic.
+/// You must configure a local executor before spawning local tasks.
 ///
 /// # Parameters
 ///
