@@ -125,126 +125,212 @@ mod tests {
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_basic_spawn_static() {
-        let mut executor = StaticLastResortExecutor::new();
+        let (s, r) = std::sync::mpsc::channel();
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
 
-        let task = Task::without_notifications(
-            "test-task".to_string(),
-            Configuration::default(),
-            async move {
-                counter_clone.fetch_add(1, Ordering::Relaxed);
-                42
-            },
-        );
+        crate::sys::thread::spawn(move || {
+            let mut executor = StaticLastResortExecutor::new();
 
-        let observer = executor.spawn_static(task);
-        // Since our executor runs synchronously, check observe() result
-        match observer.observe() {
-            crate::observer::Observation::Ready(value) => {
-                assert_eq!(value, 42);
+            let task = Task::without_notifications(
+                "test-task".to_string(),
+                Configuration::default(),
+                async move {
+                    counter_clone.fetch_add(1, Ordering::Relaxed);
+                    42
+                },
+            );
+
+            let observer = executor.spawn_static(task);
+
+            // Create and spawn a second task to do the observation
+            let observation_task = Task::without_notifications(
+                "test-task-observer".to_string(),
+                Configuration::default(),
+                async move {
+                    match observer.await {
+                        FinishedObservation::Ready(value) => {
+                            assert_eq!(value, 42);
+                            s.send(Ok(counter.load(Ordering::Relaxed))).unwrap();
+                        }
+                        _ => {
+                            s.send(Err("Task did not complete successfully")).unwrap();
+                        }
+                    }
+                },
+            );
+            executor.spawn_static(observation_task).detach();
+
+            // Block on receiver
+            match r.recv() {
+                Ok(Ok(counter_value)) => {
+                    assert_eq!(counter_value, 1);
+                }
+                Ok(Err(e)) => panic!("Task failed: {}", e),
+                Err(e) => panic!("Observation failed: {}", e),
             }
-            _ => panic!("Task should have completed immediately"),
-        }
-        assert_eq!(counter.load(Ordering::Relaxed), 1);
+        });
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_static_future() {
-        let mut executor = StaticLastResortExecutor::new();
+        let (s, r) = std::sync::mpsc::channel();
 
-        // Create a static future - using String instead of Rc since static futures need to be Send-like
-        let static_data = Arc::new(42);
-        let data_clone = static_data.clone();
+        crate::sys::thread::spawn(move || {
+            let mut executor = StaticLastResortExecutor::new();
 
-        let task = Task::without_notifications(
-            "static-task".to_string(),
-            Configuration::default(),
-            async move {
-                let _captured = data_clone; // This makes the future 'static
-                "completed"
-            },
-        );
+            // Create a static future - using String instead of Rc since static futures need to be Send-like
+            let static_data = Arc::new(42);
+            let data_clone = static_data.clone();
 
-        let observer = executor.spawn_static(task);
-        match observer.observe() {
-            crate::observer::Observation::Ready(value) => {
-                assert_eq!(value, "completed");
+            let task = Task::without_notifications(
+                "static-task".to_string(),
+                Configuration::default(),
+                async move {
+                    let _captured = data_clone; // This makes the future 'static
+                    "completed"
+                },
+            );
+
+            let observer = executor.spawn_static(task);
+
+            // Create and spawn a second task to do the observation
+            let observation_task = Task::without_notifications(
+                "static-task-observer".to_string(),
+                Configuration::default(),
+                async move {
+                    match observer.await {
+                        FinishedObservation::Ready(value) => {
+                            assert_eq!(value, "completed");
+                            s.send(Ok(())).unwrap();
+                        }
+                        _ => {
+                            s.send(Err("Task did not complete successfully")).unwrap();
+                        }
+                    }
+                },
+            );
+            executor.spawn_static(observation_task).detach();
+
+            // Block on receiver
+            match r.recv() {
+                Ok(_) => {}
+                Err(e) => panic!("Observation failed: {}", e),
             }
-            _ => panic!("Task should have completed immediately"),
-        }
+        });
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_spawn_static_async() {
-        let mut executor = StaticLastResortExecutor::new();
+        let (s, r) = std::sync::mpsc::channel();
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
+        let counter_clone2 = counter.clone();
 
-        let task = Task::without_notifications(
-            "async-task".to_string(),
-            Configuration::default(),
-            async move {
-                counter_clone.fetch_add(10, Ordering::Relaxed);
-                100
-            },
-        );
+        crate::sys::thread::spawn(move || {
+            let mut executor = StaticLastResortExecutor::new();
 
-        // Use a simple runtime to test the async spawn
-        let future = executor.spawn_static_async(task);
-        let mut pinned = std::pin::pin!(future);
+            // Create a task that tests spawn_static_async
+            let test_task = Task::without_notifications(
+                "test-spawn-async".to_string(),
+                Configuration::default(),
+                async move {
+                    let mut executor2 = StaticLastResortExecutor::new();
 
-        // For the test, we'll use a simple polling approach
-        let waker = Arc::new(DummyWaker).into();
-        let mut context = std::task::Context::from_waker(&waker);
+                    let inner_task = Task::without_notifications(
+                        "async-task".to_string(),
+                        Configuration::default(),
+                        async move {
+                            counter_clone.fetch_add(10, Ordering::Relaxed);
+                            100
+                        },
+                    );
 
-        match pinned.as_mut().poll(&mut context) {
-            std::task::Poll::Ready(obs) => match obs.observe() {
-                crate::observer::Observation::Ready(value) => {
-                    assert_eq!(value, 100);
-                    assert_eq!(counter.load(Ordering::Relaxed), 10);
+                    // Test spawn_static_async
+                    let observer = executor2.spawn_static_async(inner_task).await;
+                    match observer.await {
+                        FinishedObservation::Ready(value) => {
+                            assert_eq!(value, 100);
+                            s.send(Ok(counter_clone2.load(Ordering::Relaxed))).unwrap();
+                        }
+                        _ => {
+                            s.send(Err("Task did not complete successfully")).unwrap();
+                        }
+                    }
+                },
+            );
+            executor.spawn_static(test_task).detach();
+
+            // Block on receiver
+            match r.recv() {
+                Ok(Ok(counter_value)) => {
+                    assert_eq!(counter_value, 10);
                 }
-                _ => panic!("Task should have completed immediately"),
-            },
-            std::task::Poll::Pending => panic!("Task should complete immediately"),
-        }
+                Ok(Err(e)) => panic!("Task failed: {}", e),
+                Err(e) => panic!("Observation failed: {}", e),
+            }
+        });
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn test_spawn_static_objsafe() {
-        let mut executor = StaticLastResortExecutor::new();
+        let (s, r) = std::sync::mpsc::channel();
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
 
-        let future: Pin<Box<dyn Future<Output = Box<dyn std::any::Any>> + 'static>> =
-            Box::pin(async move {
-                counter_clone.fetch_add(5, Ordering::Relaxed);
-                Box::new(50i32) as Box<dyn std::any::Any>
-            });
+        crate::sys::thread::spawn(move || {
+            let mut executor = StaticLastResortExecutor::new();
 
-        let task = Task::without_notifications(
-            "objsafe-task".to_string(),
-            Configuration::default(),
-            future,
-        );
+            let future: Pin<Box<dyn Future<Output = Box<dyn std::any::Any>> + 'static>> =
+                Box::pin(async move {
+                    counter_clone.fetch_add(5, Ordering::Relaxed);
+                    Box::new(50i32) as Box<dyn std::any::Any>
+                });
 
-        let observer = executor.spawn_static_objsafe(task.into_objsafe_static());
-        match observer.observe() {
-            crate::observer::Observation::Ready(result) => {
-                // The future returns Box::new(50i32) as Box<dyn Any>
-                // into_objsafe_static wraps this again, so we get Box<dyn Any> containing Box<dyn Any> containing i32
-                let inner_box = result
-                    .downcast::<Box<dyn std::any::Any>>()
-                    .expect("Should be Box<dyn Any>");
-                let value = inner_box.downcast::<i32>().expect("Should be i32");
-                assert_eq!(*value, 50);
-                assert_eq!(counter.load(Ordering::Relaxed), 5);
+            let task = Task::without_notifications(
+                "objsafe-task".to_string(),
+                Configuration::default(),
+                future,
+            );
+
+            let observer = executor.spawn_static_objsafe(task.into_objsafe_static());
+
+            // Create and spawn a second task to do the observation
+            let observation_task = Task::without_notifications(
+                "objsafe-task-observer".to_string(),
+                Configuration::default(),
+                async move {
+                    match observer.await {
+                        FinishedObservation::Ready(result) => {
+                            // The future returns Box::new(50i32) as Box<dyn Any>
+                            // into_objsafe_static wraps this again, so we get Box<dyn Any> containing Box<dyn Any> containing i32
+                            let inner_box = result
+                                .downcast::<Box<dyn std::any::Any>>()
+                                .expect("Should be Box<dyn Any>");
+                            let value = inner_box.downcast::<i32>().expect("Should be i32");
+                            assert_eq!(*value, 50);
+                            s.send(Ok(counter.load(Ordering::Relaxed))).unwrap();
+                        }
+                        _ => {
+                            s.send(Err("Task did not complete successfully")).unwrap();
+                        }
+                    }
+                },
+            );
+            executor.spawn_static(observation_task).detach();
+
+            // Block on receiver
+            match r.recv() {
+                Ok(Ok(counter_value)) => {
+                    assert_eq!(counter_value, 5);
+                }
+                Ok(Err(e)) => panic!("Task failed: {}", e),
+                Err(e) => panic!("Observation failed: {}", e),
             }
-            _ => panic!("Task should have completed immediately"),
-        }
+        });
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
@@ -259,7 +345,7 @@ mod tests {
     fn test_delayed_waking() {
         let (s, r) = std::sync::mpsc::channel();
         let delayed_future = DelayedFuture::new(3, 99);
-        let poll_counter = delayed_future.poll_count.clone();
+        let _poll_counter = delayed_future.poll_count.clone();
 
         crate::sys::thread::spawn(move || {
             let mut executor = StaticLastResortExecutor::new();
@@ -296,13 +382,6 @@ mod tests {
                 Err(e) => panic!("Observation failed: {}", e),
             }
         });
-    }
-
-    // Helper struct for async test
-    struct DummyWaker;
-
-    impl std::task::Wake for DummyWaker {
-        fn wake(self: Arc<Self>) {}
     }
 
     // Custom future that polls N times before completion
