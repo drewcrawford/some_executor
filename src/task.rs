@@ -428,10 +428,10 @@ impl<F: Future<Output = ()>, N> Task<F, N> {
         executor.spawn(self).detach();
     }
 
-    /// Spawns the task onto the thread-local executor and detaches the observer.
+    /// Spawns the task onto the current thread-local executor and detaches the observer.
     ///
     /// This is a convenience method for fire-and-forget tasks that don't return a value
-    /// and may not be `Send`. The task will be spawned using the thread-local executor
+    /// and may not be `Send`. The task will be spawned using the current thread-local executor
     /// and the observer will be automatically detached.
     ///
     /// # Requirements
@@ -459,11 +459,11 @@ impl<F: Future<Output = ()>, N> Task<F, N> {
     ///     },
     /// );
     ///
-    /// // Spawn on thread-local executor
-    /// task.spawn_thread_local();
+    /// // Spawn on current thread-local executor
+    /// task.spawn_local_current();
     /// # }
     /// ```
-    pub fn spawn_thread_local(self)
+    pub fn spawn_local_current(self)
     where
         F: 'static,
         N: ObserverNotified<()> + 'static,
@@ -499,10 +499,10 @@ impl<F: Future<Output = ()>, N> Task<F, N> {
     /// );
     ///
     /// // Spawn on the thread's static executor
-    /// task.spawn_current_static();
+    /// task.spawn_static_current();
     /// # }
     /// ```
-    pub fn spawn_current_static(self)
+    pub fn spawn_static_current(self)
     where
         F: 'static,
         N: ObserverNotified<()> + 'static,
@@ -979,7 +979,7 @@ mod tests {
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-    fn test_nested_spawn_thread_local_no_panic() {
+    fn test_nested_spawn_local_current_no_panic() {
         // This test verifies that the nested submission bug is fixed
         // The key is that it should not panic with BorrowMutError anymore
 
