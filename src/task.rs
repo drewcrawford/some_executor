@@ -509,6 +509,7 @@ impl<F: Future<Output = ()>, N> Task<F, N> {
     {
         crate::thread_executor::thread_static_executor(|executor| {
             executor
+                .clone_box()
                 .spawn_static_objsafe(self.into_objsafe_static())
                 .detach();
         });

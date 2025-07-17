@@ -433,22 +433,22 @@ pub fn set_thread_local_executor_adapting_notifier<E: SomeLocalExecutor<'static>
 /// // Always get a valid static executor (will use last resort if none set)
 /// let result = thread_static_executor(|exec| {
 ///     // exec is always valid - either user-provided or last resort
-///     exec.executor_notifier().is_some()
+///     exec.clone_box().executor_notifier().is_some()
 /// });
 /// println!("Executor notifier available: {}", result);
 /// # }
 /// ```
 pub fn thread_static_executor<R>(
-    c: impl FnOnce(&mut dyn SomeStaticExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>) -> R,
+    c: impl FnOnce(&dyn SomeStaticExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>) -> R,
 ) -> R {
     THREAD_STATIC_EXECUTOR.with(|e| {
-        let mut borrowed = e.borrow_mut();
-        if let Some(executor) = borrowed.as_mut() {
-            c(executor.as_mut())
+        let borrowed = e.borrow();
+        if let Some(executor) = borrowed.as_ref() {
+            c(executor.as_ref())
         } else {
             // Use the static last resort executor as fallback
-            let mut last_resort = crate::static_last_resort::StaticLastResortExecutor::new();
-            c(&mut last_resort)
+            let last_resort = crate::static_last_resort::StaticLastResortExecutor::new();
+            c(&last_resort)
         }
     })
 }
@@ -483,7 +483,7 @@ pub fn thread_static_executor<R>(
 /// // Verify it can be accessed (will always have a valid executor)
 /// thread_static_executor(|exec| {
 ///     // exec is always valid - either user-provided or last resort
-///     let _notifier = exec.executor_notifier();
+///     let _notifier = exec.clone_box().executor_notifier();
 /// });
 /// # }
 /// ```

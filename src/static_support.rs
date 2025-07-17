@@ -79,7 +79,7 @@ impl<UnderlyingExecutor: SomeStaticExecutor> SomeStaticExecutor
 
     fn clone_box(&self) -> Box<DynStaticExecutor> {
         // This adapter doesn't support cloning. Use StaticExecutorExt for Clone support.
-        unimplemented!()
+        self.executor.clone_box()
     }
 
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
