@@ -27,6 +27,7 @@ use std::thread;
 #[cfg(target_arch = "wasm32")]
 use wasm_thread as thread;
 
+#[derive(Debug)]
 pub(crate) struct LastResortExecutor;
 
 impl LastResortExecutor {

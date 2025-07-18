@@ -34,6 +34,16 @@ impl<'borrow, 'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying> + 
     }
 }
 
+impl<'borrow, 'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying> + ?Sized>
+    std::fmt::Debug for SomeLocalExecutorErasingNotifier<'borrow, 'underlying, UnderlyingExecutor>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SomeLocalExecutorErasingNotifier")
+            .field("executor", &"<executor>")
+            .finish()
+    }
+}
+
 impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>>
     SomeLocalExecutor<'executor>
     for SomeLocalExecutorErasingNotifier<'borrow, 'executor, UnderlyingExecutor>
@@ -122,6 +132,16 @@ impl<'underlying, UnderlyingExecutor>
     }
 }
 
+impl<'underlying, UnderlyingExecutor: std::fmt::Debug> std::fmt::Debug
+    for OwnedSomeLocalExecutorErasingNotifier<'underlying, UnderlyingExecutor>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OwnedSomeLocalExecutorErasingNotifier")
+            .field("executor", &self.executor)
+            .finish()
+    }
+}
+
 impl<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalExecutor<'underlying>
     for OwnedSomeLocalExecutorErasingNotifier<'underlying, UnderlyingExecutor>
 {
@@ -192,6 +212,14 @@ impl<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalE
 
 pub(crate) struct UnsafeErasedLocalExecutor {
     underlying: *mut dyn SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn ExecutorNotified>>,
+}
+
+impl std::fmt::Debug for UnsafeErasedLocalExecutor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UnsafeErasedLocalExecutor")
+            .field("underlying", &"<executor ptr>")
+            .finish()
+    }
 }
 
 impl UnsafeErasedLocalExecutor {

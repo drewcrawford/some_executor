@@ -853,6 +853,14 @@ mod tests {
             Vec<Pin<Box<dyn DynLocalSpawnedTask<ExLocalExecutor<'future>> + 'future>>>,
         );
 
+        impl<'future> std::fmt::Debug for ExLocalExecutor<'future> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct("ExLocalExecutor")
+                    .field("tasks", &format!("{} tasks", self.0.len()))
+                    .finish()
+            }
+        }
+
         impl<'existing_tasks, 'new_task> SomeLocalExecutor<'new_task> for ExLocalExecutor<'existing_tasks>
         where
             'new_task: 'existing_tasks,

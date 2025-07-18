@@ -33,6 +33,16 @@ impl<UnderlyingExecutor> OwnedSomeStaticExecutorErasingNotifier<UnderlyingExecut
     }
 }
 
+impl<UnderlyingExecutor: std::fmt::Debug> std::fmt::Debug
+    for OwnedSomeStaticExecutorErasingNotifier<UnderlyingExecutor>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OwnedSomeStaticExecutorErasingNotifier")
+            .field("executor", &self.executor)
+            .finish()
+    }
+}
+
 impl<UnderlyingExecutor: SomeStaticExecutor> SomeStaticExecutor
     for OwnedSomeStaticExecutorErasingNotifier<UnderlyingExecutor>
 {

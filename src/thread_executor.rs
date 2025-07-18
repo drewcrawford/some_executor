@@ -369,6 +369,7 @@ pub fn set_thread_local_executor(
 /// use some_executor::observer::TypedObserver;
 /// use some_executor::thread_executor::set_thread_local_executor_adapting_notifier;
 ///
+/// # #[derive(Debug)]
 /// # struct MyLocalExecutor;
 /// # impl some_executor::SomeLocalExecutor<'static> for MyLocalExecutor {
 /// #     type ExecutorNotifier = MyNotifier;
@@ -517,6 +518,7 @@ pub fn set_thread_static_executor(
 /// ```no_run
 /// use some_executor::thread_executor::set_thread_static_executor_adapting_notifier;
 ///
+/// # #[derive(Debug)]
 /// # struct MyStaticExecutor;
 /// # struct MyNotifier;
 /// # impl some_executor::observer::ExecutorNotified for MyNotifier { fn request_cancel(&mut self) {} }

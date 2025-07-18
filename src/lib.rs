@@ -199,7 +199,7 @@ Code targeting this trait can spawn tasks on an executor without knowing which e
 
 If possible, use the [SomeExecutorExt] trait instead.  But this trait is useful if you need an objsafe trait.
 */
-pub trait SomeExecutor: Send + Sync {
+pub trait SomeExecutor: Send + Sync + Debug {
     /**
     # Design notes
     I think we want ExecutorNotified to imply Send (or at least in the case of SomeExecutor trait).
@@ -348,7 +348,7 @@ For executors with local scope, this trait can be implemented for any lifetime.
 When in doubt, the `'static` lifetime can be chosen and upgraded later.
 
 */
-pub trait SomeLocalExecutor<'future> {
+pub trait SomeLocalExecutor<'future>: Debug {
     type ExecutorNotifier: ExecutorNotified;
     /**
     Spawns a future onto the runtime.
@@ -417,7 +417,7 @@ of static lifetime without Send requirements.
 - Applications with static lifetimes but thread-local execution
 - Bridge between local and global executor patterns
 */
-pub trait SomeStaticExecutor: 'static {
+pub trait SomeStaticExecutor: 'static + Debug {
     type ExecutorNotifier: ExecutorNotified;
 
     /**
@@ -514,18 +514,6 @@ pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier = Infallible>;
 The appropriate type for a dynamically-dispatched static executor.
 */
 pub type DynStaticExecutor = dyn SomeStaticExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>;
-
-impl Debug for DynExecutor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("DynExecutor")
-    }
-}
-
-impl Debug for DynStaticExecutor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("DynStaticExecutor")
-    }
-}
 
 /**
 A non-objsafe descendant of [SomeLocalExecutor].

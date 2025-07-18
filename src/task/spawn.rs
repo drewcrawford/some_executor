@@ -102,6 +102,7 @@ impl<F: Future, N> Task<F, N> {
     /// use some_executor::task::{Task, Configuration};
     /// use some_executor::SomeExecutor;
     ///
+    /// # #[derive(Debug)]
     /// # struct MyExecutor;
     /// # impl SomeExecutor for MyExecutor {
     /// #     type ExecutorNotifier = std::convert::Infallible;
@@ -197,6 +198,7 @@ impl<F: Future, N> Task<F, N> {
     /// # use std::future::Future;
     /// # use std::convert::Infallible;
     ///
+    /// # #[derive(Debug)]
     /// # struct MyLocalExecutor;
     /// # impl<'a> SomeLocalExecutor<'a> for MyLocalExecutor {
     /// #     type ExecutorNotifier = Infallible;
@@ -276,6 +278,7 @@ impl<F: Future, N> Task<F, N> {
     /// # use std::future::Future;
     /// # use std::convert::Infallible;
     ///
+    /// # #[derive(Debug)]
     /// # struct MyStaticExecutor;
     /// # impl SomeStaticExecutor for MyStaticExecutor {
     /// #     type ExecutorNotifier = Box<dyn some_executor::observer::ExecutorNotified>;

@@ -19,7 +19,7 @@ use crate::{
 };
 use std::future::Future;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct StaticLastResortExecutor;
 
 impl StaticLastResortExecutor {
