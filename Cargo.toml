@@ -16,12 +16,19 @@ exclude = [".*","art"]
 priority = "0.1.1"
 atomic-waker = "1.1.2"
 
+
 [target.'cfg(target_arch="wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 web-time = "1.1"
 wasm_thread = "0.3.3"
 web-sys = { version = "0.3.76", features=["console"] }
 wasm-bindgen-futures = "0.4.50"
+js-sys = "0.3.77"
+
+[dev-dependencies]
+test_executors = "0.3"
 
 [target.'cfg(target_arch="wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3.45"
+
+# doctest require wasm_thread patch
