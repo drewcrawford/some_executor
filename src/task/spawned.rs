@@ -40,7 +40,7 @@ pub(super) struct TaskMetadata {
 pub(super) struct TaskState<'a, F, N> {
     pub(super) sender: &'a mut ObserverSender<F, N>,
     pub(super) label: &'a mut Option<String>,
-    pub(super) cancellation: &'a mut Option<InFlightTaskCancellation>,
+    pub(super) cancellation: &'a Option<InFlightTaskCancellation>,
     pub(super) executor: &'a mut Option<Box<dyn SomeExecutor<ExecutorNotifier = Infallible>>>,
 }
 
@@ -386,6 +386,7 @@ where
     L: SomeLocalExecutor<'l>,
     S: SomeStaticExecutor,
 {
+    let hold_original_label_for_debug = state.label.clone();
     assert!(
         metadata.poll_after <= crate::sys::Instant::now(),
         "Conforming executors should not poll tasks before the poll_after time."
@@ -395,82 +396,101 @@ where
         return Poll::Ready(());
     }
     //before poll, we need to set our properties
+    let old_label;
+    let old_cancel;
+    let old_priority;
+    let old_id;
+    let old_executor;
+    let old_static_executor;
+    // let mut swap_local_executor;
     unsafe {
-        TASK_LABEL.with_mut(|l| {
-            *l = Some(
-                state
-                    .label
-                    .take()
-                    .expect("Label not set (is task being polled already?)"),
-            );
+        let _old_label = TASK_LABEL.with_mut(|l| {
+            let o = l.clone();
+            *l = state.label.clone();
+            o
         });
-        IS_CANCELLED.with_mut(|c| {
-            *c = Some(
-                state
-                    .cancellation
-                    .take()
-                    .expect("Cancellation not set (is task being polled already?)"),
-            );
+        old_label = _old_label;
+
+        let _old_cancel = IS_CANCELLED.with_mut(|c| {
+            let o = c.clone();
+            *c = state.cancellation.clone();
+            o
         });
-        TASK_PRIORITY.with_mut(|p| {
+        old_cancel = _old_cancel;
+
+        let _old_priority = TASK_PRIORITY.with_mut(|p| {
+            let o = *p;
             *p = Some(metadata.priority);
+            o
         });
-        TASK_ID.with_mut(|i| {
+        old_priority = _old_priority;
+        let _old_id = TASK_ID.with_mut(|i| {
+            let o = i.clone();
             *i = Some(metadata.task_id);
+            o
         });
-        TASK_EXECUTOR.with_mut(|e| {
-            *e = Some(state.executor.take());
+        old_id = _old_id;
+
+        let _old_executor = TASK_EXECUTOR.with_mut(|e| {
+            //deep clone
+            let o = e.as_ref().map(|o| o.as_ref().map(|o| o.clone_box()));
+            //set executor if needed
+            if let Some(executor) = state.executor.as_ref() {
+                *e = Some(Some(executor.clone_box()));
+            }
+            o
         });
-        if let Some(_static_executor) = static_executor {
-            // For now, we'll just handle static executors by setting the task-local
-            // TODO: Add proper type erasure for static executors similar to local executors
-            // TASK_STATIC_EXECUTOR.with_mut(|e| {
-            //     *e = Some(Box::new(StaticExecutorWrapper::new(_static_executor)));
-            // });
-        }
-        if let Some(local_executor) = local_executor {
-            let mut erased_value_executor = Box::new(
-                crate::local::SomeLocalExecutorErasingNotifier::new(local_executor),
-            )
-                as Box<
-                    dyn SomeLocalExecutor<
-                            ExecutorNotifier = Box<dyn crate::observer::ExecutorNotified>,
-                        > + '_,
-                >;
-            let erased_value_executor_ref = Box::as_mut(&mut erased_value_executor);
-            let erased_unsafe_executor = UnsafeErasedLocalExecutor::new(erased_value_executor_ref);
-            TASK_LOCAL_EXECUTOR.with(|e| {
-                e.borrow_mut().replace(Box::new(erased_unsafe_executor));
-            });
-        }
+        old_executor = _old_executor;
+
+        let _old_static_executor = TASK_STATIC_EXECUTOR.with_mut(|e| {
+            //deep clone
+            let o = e.as_ref().map(|o| o.as_ref().map(|o| o.clone_box()));
+            //set static executor if needed
+            if let Some(executor) = static_executor {
+                *e = Some(Some(executor.clone_box()));
+            }
+            o
+        });
+        old_static_executor = _old_static_executor;
+
+        // let _swap_executor = TASK_LOCAL_EXECUTOR.with_borrow_mut(|e| {
+        //     //can't clone a local executor
+        //     if let Some(local_executor) = local_executor {
+        //         Some(e.replace(local_executor))
+        //     } else {
+        //         None
+        //     }
+        // });
+        // swap_local_executor = _swap_executor;
     }
     let r = future.poll(cx);
     //after poll, we need to set our properties
     unsafe {
         TASK_LABEL.with_mut(|l| {
-            let read_label = l.take().expect("Label not set");
-            *state.label = Some(read_label);
+            eprintln!("Polling task with original label: {hold_original_label_for_debug:?}");
+            *state.label = old_label;
         });
         IS_CANCELLED.with_mut(|c| {
-            let read_cancellation = c.take().expect("Cancellation not set");
-            *state.cancellation = Some(read_cancellation);
+            *c = old_cancel;
         });
         TASK_PRIORITY.with_mut(|p| {
-            *p = None;
+            *p = old_priority;
         });
         TASK_ID.with_mut(|i| {
-            *i = None;
+            *i = old_id;
         });
         TASK_EXECUTOR.with_mut(|e| {
-            let read_executor = e.take().expect("Executor not set");
-            *state.executor = read_executor
+            *e = old_executor;
         });
         TASK_STATIC_EXECUTOR.with_mut(|e| {
-            *e = None;
+            *e = old_static_executor;
         });
-        TASK_LOCAL_EXECUTOR.with_borrow_mut(|e| {
-            *e = None;
-        });
+        // if let Some(swapme) = swap_local_executor {
+        //     TASK_LOCAL_EXECUTOR.with_borrow_mut(|e| {
+        //         let original_arg = e.replace(swapme);
+        //         local_executor.replace(original_arg); //swap back with arg!
+        //     });
+        // }
     }
     match r {
         Poll::Ready(r) => {

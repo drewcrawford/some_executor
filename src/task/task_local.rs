@@ -38,7 +38,7 @@ type ThreadLocalExecutor = RefCell<
 ///      return;
 ///  }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InFlightTaskCancellation(Arc<AtomicBool>);
 
 impl InFlightTaskCancellation {

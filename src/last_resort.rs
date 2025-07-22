@@ -98,45 +98,48 @@ impl LastResortExecutor {
             web_sys::console::log_1(&"some_executor::LastResortExecutor is in use.  This is not intended for production code; investigate ways to use a production-quality executor.".into());
         }
 
-        thread::spawn(|| {
-            let shared = Arc::new(Shared {
-                condvar: Condvar::new(),
-                mutex: Mutex::new(false),
-                inline_notify: AtomicU8::new(SLEEPING),
-            });
-            let waker = Waker {
-                shared: shared.clone(),
-            }
-            .into_core_waker();
-            let mut c = Context::from_waker(&waker);
-            let mut pin = pin!(f);
-            loop {
-                let mut _guard = shared.mutex.lock().expect("Mutex poisoned");
-                //eagerly poll
-                shared.inline_notify.store(LISTENING, Ordering::Relaxed);
-                let r = pin.as_mut().poll(&mut c);
-                match r {
-                    Poll::Ready(..) => {
-                        return;
-                    }
-                    Poll::Pending => {
-                        let old = shared.inline_notify.swap(SLEEPING, Ordering::Relaxed);
-                        if old == WAKEPLS {
-                            //release lock anyway
-                            drop(_guard);
-                            continue; //poll eagerly
-                        } else {
-                            _guard = shared
-                                .condvar
-                                .wait_while(_guard, |_| {
-                                    shared.inline_notify.load(Ordering::Relaxed) != WAKEPLS
-                                })
-                                .expect("Condvar poisoned");
+        thread::Builder::new()
+            .name("some_executor::LastResortExecutor".to_string())
+            .spawn(|| {
+                let shared = Arc::new(Shared {
+                    condvar: Condvar::new(),
+                    mutex: Mutex::new(false),
+                    inline_notify: AtomicU8::new(SLEEPING),
+                });
+                let waker = Waker {
+                    shared: shared.clone(),
+                }
+                .into_core_waker();
+                let mut c = Context::from_waker(&waker);
+                let mut pin = pin!(f);
+                loop {
+                    let mut _guard = shared.mutex.lock().expect("Mutex poisoned");
+                    //eagerly poll
+                    shared.inline_notify.store(LISTENING, Ordering::Relaxed);
+                    let r = pin.as_mut().poll(&mut c);
+                    match r {
+                        Poll::Ready(..) => {
+                            return;
+                        }
+                        Poll::Pending => {
+                            let old = shared.inline_notify.swap(SLEEPING, Ordering::Relaxed);
+                            if old == WAKEPLS {
+                                //release lock anyway
+                                drop(_guard);
+                                continue; //poll eagerly
+                            } else {
+                                _guard = shared
+                                    .condvar
+                                    .wait_while(_guard, |_| {
+                                        shared.inline_notify.load(Ordering::Relaxed) != WAKEPLS
+                                    })
+                                    .expect("Condvar poisoned");
+                            }
                         }
                     }
                 }
-            }
-        });
+            })
+            .unwrap();
     }
 }
 
