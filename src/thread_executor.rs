@@ -101,10 +101,10 @@
 //! for regular executors, as they may be cloned and shared across async contexts.
 
 use crate::observer::ExecutorNotified;
+use crate::task::Configuration;
 use crate::{DynExecutor, SomeLocalExecutor, SomeStaticExecutor};
 use std::cell::RefCell;
 use std::rc::Rc;
-
 // Type alias for complex types to satisfy clippy::type_complexity warnings
 
 /// Type alias for a thread-local executor that can handle local tasks
@@ -548,4 +548,77 @@ pub fn set_thread_static_executor(
 pub fn set_thread_static_executor_adapting_notifier<E: SomeStaticExecutor + 'static>(runtime: E) {
     let adapter = crate::static_support::OwnedSomeStaticExecutorErasingNotifier::new(runtime);
     set_thread_static_executor(Box::new(adapter));
+}
+
+/**
+Pins a task to run on the current thread; converts non-Send futures to Send futures.
+
+# Discussion
+
+In Rust we prefer Send futures, which allow the executor to move tasks between threads at await
+points.  Doing this allows the executor to rebalance the load after futures have begun executing.
+For example, the future can resume on the first available thread, rather than the thread it started
+on.
+
+This optimization requires that the future is Send, which means that it can't hold a non-Send type
+across an await point.  This is a problem for futures that work with non-Send types, such as
+Rc or RefCell.
+
+When this is a problem, you can use this function to pin a non-Send task to the current thread.
+
+# Downsides
+
+This is a completely legitimate solution to the problem but it has some downsides:
+1.  By nature, a non-Send future cannot be moved around in the thread pool, so it is necessarily
+    less efficient than a Send future.
+2.  There is some small runtime overhead to handing the Send-to-!Send mismatch.
+3.  We go ahead and spawn the task before the return future is polled, which is nonstandard
+    in Rust.  However, it is necessary because we must use the current thread to run non-Send tasks.
+4.  Cancellation is not supported very well.
+
+Because of these downsides, consider these alternatives to this function:
+
+1.  Consider using Send/Sync types where available.
+2.  Consider using a block scope to isolate non-Send types when they don't need to be held across
+    await points.  See the example at https://rust-lang.github.io/async-book/07_workarounds/03_send_approximation.html.
+3.  Consider using the [SomeStaticExecutor] methods directly.  The trouble is the trait itself
+    does not require the observer to be Send as not all executors will support it.  But if you know
+    the concrete type and it supports this, you can use it directly.
+
+This function primarily comes into play when none of the other alternatives are viable, such as
+when Send/Sync types are unavoidable, must be held across await, the executor type is either
+erased or does not support Send.
+
+# See also
+[Task.pin_current] for a more idiomatic way to pin a task to the current thread.
+
+
+*/
+pub fn pin_static_to_thread<E: SomeStaticExecutor, R, F: Future<Output = R>, N>(
+    executor: &mut E,
+    task: crate::Task<F, N>,
+) -> impl Future<Output = R> + Send + use<E, R, F, N>
+where
+    F: 'static,
+    R: 'static + Send,
+{
+    use crate::observer::Observer;
+    let (c, fut) = r#continue::continuation();
+    //move task into parts
+    let label = task.label().to_owned();
+    let hint = task.hint();
+    let priority = task.priority();
+    let poll_after = task.poll_after();
+    let configuration = Configuration::new(hint, priority, poll_after);
+    let future = task.into_future();
+    let t = crate::Task::without_notifications(label.clone(), configuration, async move {
+        let r = future.await;
+        c.send(r);
+    });
+    let o = executor.spawn_static(t);
+    let name = format!("pin_static_to_thread continuation for {}", label);
+    let t = crate::Task::without_notifications(name, configuration, async move { o.await });
+    let o2 = executor.spawn_static(t).detach(); //can't hold this across await points
+
+    async { fut.await }
 }

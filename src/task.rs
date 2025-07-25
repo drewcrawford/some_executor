@@ -516,6 +516,64 @@ impl<F: Future<Output = ()>, N> Task<F, N> {
     }
 }
 
+impl<F: Future, N> Task<F, N> {
+    /**
+    Pins a task to run on the current thread; converts non-Send futures to Send futures.
+
+    # Discussion
+
+    In Rust we prefer Send futures, which allow the executor to move tasks between threads at await
+    points.  Doing this allows the executor to rebalance the load after futures have begun executing.
+    For example, the future can resume on the first available thread, rather than the thread it started
+    on.
+
+    This optimization requires that the future is Send, which means that it can't hold a non-Send type
+    across an await point.  This is a problem for futures that work with non-Send types, such as
+    Rc or RefCell.
+
+    When this is a problem, you can use this function to pin a non-Send task to the current thread.
+
+    # Downsides
+
+    This is a completely legitimate solution to the problem but it has some downsides:
+    1.  By nature, a non-Send future cannot be moved around in the thread pool, so it is necessarily
+        less efficient than a Send future.
+    2.  There is some small runtime overhead to handing the Send-to-!Send mismatch.
+    3.  We go ahead and spawn the task before the return future is polled, which is nonstandard
+        in Rust.  However, it is necessary because we must use the current thread to run non-Send tasks.
+    4.  Cancellation is not supported very well.
+
+    Because of these downsides, consider these alternatives to this function:
+
+    1.  Consider using Send/Sync types where available.
+    2.  Consider using a block scope to isolate non-Send types when they don't need to be held across
+        await points.  See the example at https://rust-lang.github.io/async-book/07_workarounds/03_send_approximation.html.
+    3.  Consider using the [SomeStaticExecutor] methods directly.  The trouble is the trait itself
+        does not require the observer to be Send as not all executors will support it.  But if you know
+        the concrete type and it supports this, you can use it directly.
+
+    This function primarily comes into play when none of the other alternatives are viable, such as
+    when Send/Sync types are unavoidable, must be held across await, the executor type is either
+    erased or does not support Send.
+
+    # See also
+    [crate::thread_executor::pin_static_to_thread] for a more general-purpose pinning function.
+
+
+    */
+    pub fn pin_current(self) -> impl Future<Output = F::Output> + Send
+    where
+        F: 'static,
+        F::Output: Send,
+    {
+        let f = {
+            let mut executor = crate::thread_executor::thread_static_executor(|e| e.clone_box());
+            crate::thread_executor::pin_static_to_thread(&mut executor, self)
+        };
+        async { f.await }
+    }
+}
+
 impl
     Task<
         Pin<Box<dyn Future<Output = Box<dyn Any + Send + 'static>> + Send + 'static>>,
@@ -732,7 +790,7 @@ impl From<TaskID> for u64 {
 
 impl AsRef<u64> for TaskID {
     /**
-    Equivalent to [TaskID::to_u64].
+    Equiv + use<E, R, F, N> + use<E, R, F, N>alent to [TaskID::to_u64].
     */
     fn as_ref(&self) -> &u64 {
         &self.0
