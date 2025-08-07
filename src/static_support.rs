@@ -19,13 +19,13 @@ use std::marker::PhantomData;
 /**
 Like `SomeStaticExecutorErasingNotifier`, but owns the underlying executor.
 */
-pub(crate) struct OwnedSomeStaticExecutorErasingNotifier<UnderlyingExecutor> {
+pub struct OwnedSomeStaticExecutorErasingNotifier<UnderlyingExecutor> {
     executor: UnderlyingExecutor,
     _phantom: PhantomData<()>,
 }
 
 impl<UnderlyingExecutor> OwnedSomeStaticExecutorErasingNotifier<UnderlyingExecutor> {
-    pub(crate) fn new(executor: UnderlyingExecutor) -> Self {
+    pub fn new(executor: UnderlyingExecutor) -> Self {
         Self {
             executor,
             _phantom: PhantomData,

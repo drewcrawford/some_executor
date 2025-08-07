@@ -63,9 +63,13 @@ where
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // web_sys::console::log_1(&"WasmStaticTask::poll".into());
+
         // Delegate to the SpawnedStaticTask's poll method
         // Following the same pattern as in stdlib implementation
-        self.spawned.as_mut().poll::<Infallible>(cx, None, None)
+        let r = self.spawned.as_mut().poll::<Infallible>(cx, None, None);
+        // web_sys::console::log_1(&"WasmStaticTask::poll done".into());
+        r
     }
 }
 
