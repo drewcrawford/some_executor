@@ -164,10 +164,18 @@ fn patch_if_needed() {
             let global = js_sys::global();
 
             // 2. Grab the original `close` function (`fn () -> !`)
-            let orig_close: Function = Reflect::get(&global, &"close".into())
+            let orig_close: Function = match Reflect::get(&global, &"close".into())
                 .expect("global.close should exist")
                 .dyn_into()
-                .expect("global.close is not a function");
+            {
+                Ok(f) => f,
+                Err(_) => {
+                    web_sys::console::error_1(
+                        &"Global close function not found; might be node?".into(),
+                    );
+                    return;
+                }
+            };
 
             // 3. Make a Rust closure that logs *then* calls the real close
             let wrapper = Closure::wrap(Box::new(move || {
