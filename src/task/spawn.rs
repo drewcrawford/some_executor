@@ -7,13 +7,13 @@
 
 use crate::dyn_observer_notified::{ObserverNotifiedErased, ObserverNotifiedErasedLocal};
 use crate::observer::{ExecutorNotified, ObserverNotified, TypedObserver, observer_channel};
+use crate::task::objsafe::{ObjSafeLocalTask, ObjSafeStaticTask, ObjSafeTask};
 use crate::task::task_local::InFlightTaskCancellation;
 use crate::task::{Task, spawned};
-use crate::{ObjSafeStaticTask, SomeExecutor, SomeLocalExecutor, SomeStaticExecutor};
+use crate::{SomeExecutor, SomeLocalExecutor, SomeStaticExecutor};
 use std::any::Any;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::pin::Pin;
 
 // Type aliases for complex spawn result types
 
@@ -58,25 +58,6 @@ pub type SpawnStaticObjSafeResult<F, N, Executor> = (
     spawned::SpawnedStaticTask<F, N, Executor>,
     TypedObserver<<F as Future>::Output, Box<dyn ExecutorNotified>>,
 );
-
-/// Type alias for a boxed future that outputs boxed Any and is Send + 'static
-type BoxedSendFuture =
-    Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>;
-
-/// Type alias for a boxed observer notifier that handles Send Any values
-type BoxedSendObserverNotifier = Box<dyn ObserverNotified<dyn Any + Send> + Send>;
-
-/// Type alias for a Task that can be used with object-safe spawning
-type ObjSafeTask = Task<BoxedSendFuture, BoxedSendObserverNotifier>;
-
-/// Type alias for a boxed future that outputs boxed Any (non-Send)
-type BoxedLocalFuture = Pin<Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>>;
-
-/// Type alias for a boxed observer notifier that handles Any values (non-Send)
-type BoxedLocalObserverNotifier = Box<dyn ObserverNotified<dyn Any + 'static>>;
-
-/// Type alias for a Task that can be used with local object-safe spawning
-type ObjSafeLocalTask = Task<BoxedLocalFuture, BoxedLocalObserverNotifier>;
 
 impl<F: Future, N> Task<F, N> {
     /// Spawns the task onto an executor.
