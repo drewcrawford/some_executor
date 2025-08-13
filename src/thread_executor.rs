@@ -365,7 +365,7 @@ pub fn set_thread_local_executor(
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```
 /// use some_executor::observer::TypedObserver;
 /// use some_executor::thread_executor::set_thread_local_executor_adapting_notifier;
 ///
@@ -389,7 +389,7 @@ pub fn set_thread_local_executor(
 /// # impl some_executor::observer::ExecutorNotified for MyNotifier { fn request_cancel(&mut self) {} }
 ///
 /// // Custom local executor with its own notifier type
-/// let my_executor: MyLocalExecutor = todo!();
+/// let my_executor: MyLocalExecutor = MyLocalExecutor;
 ///
 /// // This function handles the notifier type erasure automatically
 /// set_thread_local_executor_adapting_notifier(my_executor);
@@ -515,7 +515,7 @@ pub fn set_thread_static_executor(
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```
 /// use some_executor::thread_executor::set_thread_static_executor_adapting_notifier;
 ///
 /// # #[derive(Debug)]

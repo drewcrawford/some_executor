@@ -26,6 +26,7 @@
 //! # Example Usage
 //!
 //! ```no_run
+//! # // not runnable because we use `todo!()`
 //! use some_executor::global_executor::{set_global_executor, global_executor};
 //! use some_executor::DynExecutor;
 //!
@@ -67,6 +68,7 @@ static GLOBAL_RUNTIME: OnceLock<Box<DynExecutor>> = OnceLock::new();
 /// ## Cloning the executor for task spawning
 ///
 /// ```no_run
+/// # // not runnable because there is no global executor set in this config
 /// use some_executor::global_executor::global_executor;
 /// use some_executor::task::{Task, ConfigurationBuilder};
 ///
@@ -134,7 +136,7 @@ pub fn global_executor<R>(c: impl FnOnce(Option<&DynExecutor>) -> R) -> R {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use some_executor::global_executor::set_global_executor;
 /// use some_executor::DynExecutor;
 ///

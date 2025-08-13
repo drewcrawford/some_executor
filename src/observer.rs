@@ -218,6 +218,7 @@ pub trait Observer: 'static + Future<Output = FinishedObservation<Self::Value>> 
 /// Dropping a `TypedObserver` will request cancellation of the associated task:
 ///
 /// ```no_run
+/// # // not runnable becuase of todo!()
 /// # use some_executor::observer::TypedObserver;
 /// # use std::convert::Infallible;
 /// # let observer: TypedObserver<(), Infallible> = todo!();
@@ -336,6 +337,7 @@ impl<T, E: ExecutorNotified> TypedObserver<T, E> {
     /// # Examples
     ///
     /// ```no_run
+    /// # // not runnable because of todo!()
     /// # use some_executor::observer::TypedObserver;
     /// # use some_executor::observer::Observation;
     /// # use std::convert::Infallible;
@@ -374,6 +376,7 @@ impl<T, E: ExecutorNotified> TypedObserver<T, E> {
     /// # Examples
     ///
     /// ```no_run
+    /// # // not runnable because of todo!()
     /// # use some_executor::observer::TypedObserver;
     /// # use std::convert::Infallible;
     /// # let observer: TypedObserver<(), Infallible> = todo!();
@@ -481,15 +484,43 @@ pub trait ObserverNotified<T: ?Sized>: Unpin + 'static {
 /// If your executor doesn't need notifications, use [`std::convert::Infallible`] as
 /// the type parameter and pass `None` where executor notifiers are expected:
 ///
-/// ```ignore
+/// ```
 /// use std::convert::Infallible;
-/// use some_executor::SomeExecutor;
+/// use some_executor::observer::{Observer, ObserverNotified, TypedObserver};
+/// use some_executor::{BoxedSendObserver, BoxedSendObserverFuture, DynExecutor, ObjSafeTask, SomeExecutor};
+/// use some_executor::task::Task;
+///
 ///
 /// // Define an executor that doesn't use notifications
+/// #[derive(Debug)]
 /// struct MyExecutor;
 ///
 /// impl SomeExecutor for MyExecutor {
 ///     type ExecutorNotifier = Infallible;
+///
+/// fn spawn<F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&mut self, task: Task<F, Notifier>) -> impl Observer<Value=F::Output> + Send where Self: Sized, F::Output: Send + Unpin {
+///          todo!() as TypedObserver::<F::Output, Infallible>
+///     }
+///
+/// fn spawn_async<'s, F: Future + Send + 'static, Notifier: ObserverNotified<F::Output> + Send>(&'s mut self, task: Task<F, Notifier>) -> impl Future<Output=impl Observer<Value=F::Output>> + Send + 's where Self: Sized, F::Output: Send + Unpin {
+///         async { todo!() as TypedObserver::<F::Output, Infallible>}
+///     }
+///
+/// fn spawn_objsafe(&mut self, task: ObjSafeTask) -> BoxedSendObserver {
+///         todo!()
+///     }
+///
+/// fn spawn_objsafe_async<'s>(&'s mut self, task: ObjSafeTask) -> BoxedSendObserverFuture<'s> {
+///         Box::new(async { todo!() })
+///     }
+///
+/// fn clone_box(&self) -> Box<DynExecutor> {
+///         todo!()
+///     }
+///
+/// fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
+///         None
+///     }
 ///     
 ///     // Implement the required methods...
 ///     // (implementation details omitted for brevity)

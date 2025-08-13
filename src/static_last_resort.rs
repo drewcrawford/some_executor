@@ -1,9 +1,78 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 /*!
-This static executor is in use when no other static executors are registered.
+A fallback static executor that provides a guaranteed async runtime when no other executors are available.
 
-It is intentionally the simplest idea possible, but it ensures a compliant static executor is always available.
+This module implements `StaticLastResortExecutor`, a minimal but compliant static executor that serves
+as the ultimate fallback in the `some_executor` hierarchy. When no production-quality static executor
+is configured, this executor ensures that static async code can still run, albeit with significant
+performance limitations.
+
+# Design Philosophy
+
+The `StaticLastResortExecutor` is intentionally designed to be the simplest possible executor that
+still correctly implements the `SomeStaticExecutor` trait. It prioritizes correctness and availability
+over performance, making it suitable only for development, testing, or emergency fallback scenarios.
+
+# Implementation Strategy
+
+This executor uses a synchronous, blocking approach:
+- Tasks are executed immediately and synchronously on the calling thread
+- No actual concurrent execution occurs - everything runs sequentially
+- Platform-specific synchronization primitives (condvar/mutex on std, busy-waiting on WASM)
+- Emits warnings when used to alert developers about the performance implications
+
+# When This Executor Is Used
+
+The static last resort executor activates when:
+1. No global static executor has been configured via `set_static_executor()`
+2. No thread-local static executor is available
+3. Code attempts to spawn a static future without proper executor setup
+
+# Performance Characteristics
+
+**Warning**: This executor is NOT intended for production use. It has severe limitations:
+- **No concurrency**: All tasks run synchronously, blocking the calling thread
+- **Poor scalability**: Each spawn blocks until the task completes
+- **High overhead**: Uses heavyweight synchronization primitives for simple polling
+- **No work stealing**: Tasks cannot be distributed across threads
+- **No I/O optimization**: Blocking I/O will block the entire executor
+
+# Platform Differences
+
+## Standard Platforms (non-WASM)
+Uses `std::sync::Condvar` and `std::sync::Mutex` for wake notifications, providing
+efficient blocking waits when futures return `Poll::Pending`.
+
+## WASM32
+Falls back to busy-waiting or platform-specific primitives since standard blocking
+primitives are not available in browser environments.
+
+# Example
+
+```
+// This example shows when the last resort executor would be used.
+// In production, you should configure a proper executor instead.
+
+use some_executor::thread_executor::thread_static_executor;
+
+// When no executor is set, the last resort executor is used automatically
+thread_static_executor(|executor| {
+    // This executor will be the last resort if none was configured
+    // It prints a warning to stderr when used
+
+    // The StaticLastResortExecutor is an internal implementation detail
+    // that gets invoked automatically as a fallback
+    println!("Using executor: {:?}", std::any::type_name_of_val(executor));
+});
+```
+
+# Alternatives
+
+For production use, consider these alternatives:
+- Configure a global static executor at application startup
+- Use thread-local executors for isolated execution contexts
+- Integrate with established runtimes like Tokio or async-std
 
 > Cut my tasks into pieces, this is my last resort!
 > Async handling, no tokio, don't give a fuck if performance is bleeding
@@ -19,15 +88,65 @@ use crate::{
 };
 use std::future::Future;
 
+/// A minimal static executor that runs tasks synchronously as a last resort fallback.
+///
+/// This executor provides a compliant implementation of [`SomeStaticExecutor`] but with
+/// severe performance limitations. It's designed to ensure that async code can always
+/// run, even when no production executor is configured.
+///
+/// # Warning
+///
+/// This executor is NOT suitable for production use. It executes all tasks synchronously
+/// on the calling thread, providing no actual concurrency. A warning is printed to stderr
+/// (or console on WASM) whenever this executor is used.
+///
+/// # Implementation Details
+///
+/// When a task is spawned:
+/// 1. The task is immediately executed synchronously using platform-specific primitives
+/// 2. The executor blocks until the task completes
+/// 3. An observer handle is returned for compatibility, but the task has already finished
+///
+/// # Thread Safety
+///
+/// `StaticLastResortExecutor` is `Clone` and can be safely shared between threads.
+/// However, each spawn operation blocks the calling thread until completion, so
+/// concurrent spawns from different threads will effectively serialize.
+///
+/// # Memory Safety
+///
+/// The executor properly handles task lifetimes and waker management through the
+/// platform-specific `run_static_task` implementation, ensuring no use-after-free
+/// or memory leaks occur
+
 #[derive(Clone, Debug)]
 pub(crate) struct StaticLastResortExecutor;
 
 impl StaticLastResortExecutor {
+    /// Creates a new instance of the static last resort executor.
+    ///
+    /// This executor should only be used when no other static executor is available.
+    /// It will print a warning when first used to alert developers about the
+    /// performance implications.
     pub fn new() -> Self {
         StaticLastResortExecutor
     }
 }
 
+/// Prints a warning message indicating that the last resort executor is being used.
+///
+/// This function alerts developers that they are using a fallback executor with poor
+/// performance characteristics. The warning is printed to:
+/// - `stderr` on standard platforms via `eprintln!`
+/// - Browser console on WASM32 targets via `web_sys::console::log_1`
+///
+/// The warning is printed each time a task is spawned to ensure developers are aware
+/// of the performance implications.
+///
+/// # Note
+///
+/// In production builds, consider configuring a proper executor to avoid these warnings
+/// and achieve better performance.
 fn print_warning() {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -44,6 +163,26 @@ fn print_warning() {
 impl SomeStaticExecutor for StaticLastResortExecutor {
     type ExecutorNotifier = Box<dyn ExecutorNotified>;
 
+    /// Spawns a static future and executes it synchronously.
+    ///
+    /// This method immediately executes the provided task to completion on the current thread.
+    /// Despite appearing asynchronous, the execution is entirely synchronous - the task
+    /// completes before this method returns.
+    ///
+    /// # Parameters
+    ///
+    /// - `task`: The task containing a `'static` future to execute
+    ///
+    /// # Returns
+    ///
+    /// An [`Observer`] handle for the completed task. Since execution is synchronous,
+    /// the task has already finished when this method returns.
+    ///
+    /// # Performance Warning
+    ///
+    /// This method blocks the calling thread until the task completes. It prints a warning
+    /// to alert developers about the performance implications.
+    ///
     fn spawn_static<F: Future + 'static, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
@@ -63,6 +202,23 @@ impl SomeStaticExecutor for StaticLastResortExecutor {
         observer
     }
 
+    /// Spawns a static future "asynchronously" but actually executes it synchronously.
+    ///
+    /// Despite returning a `Future`, this method executes the task synchronously before
+    /// returning. The returned future is already resolved with the observer handle.
+    ///
+    /// # Parameters
+    ///
+    /// - `task`: The task containing a `'static` future to execute
+    ///
+    /// # Returns
+    ///
+    /// A future that immediately resolves to an [`Observer`] handle. The future is always
+    /// ready since the task executes synchronously.
+    ///
+    /// # Performance Warning
+    ///
+    /// Like `spawn_static`, this blocks the calling thread until task completion.
     fn spawn_static_async<F: Future + 'static, Notifier: ObserverNotified<F::Output>>(
         &mut self,
         task: Task<F, Notifier>,
@@ -81,6 +237,22 @@ impl SomeStaticExecutor for StaticLastResortExecutor {
         std::future::ready(observer)
     }
 
+    /// Spawns an object-safe static task and executes it synchronously.
+    ///
+    /// This method handles type-erased tasks, allowing the executor to work with
+    /// dynamic dispatch scenarios. Like other spawn methods, execution is synchronous.
+    ///
+    /// # Parameters
+    ///
+    /// - `task`: An object-safe task wrapper containing a type-erased future
+    ///
+    /// # Returns
+    ///
+    /// A boxed observer for the completed task.
+    ///
+    /// # Performance Warning
+    ///
+    /// Blocks the calling thread until completion and prints a warning.
     fn spawn_static_objsafe(&mut self, task: ObjSafeStaticTask) -> BoxedStaticObserver {
         print_warning();
 
@@ -91,6 +263,22 @@ impl SomeStaticExecutor for StaticLastResortExecutor {
         Box::new(observer)
     }
 
+    /// Spawns an object-safe static task "asynchronously" but executes it synchronously.
+    ///
+    /// Similar to `spawn_static_async`, this returns an immediately ready future
+    /// containing the observer, as the task executes synchronously.
+    ///
+    /// # Parameters
+    ///
+    /// - `task`: An object-safe task wrapper containing a type-erased future
+    ///
+    /// # Returns
+    ///
+    /// A boxed future that immediately resolves to a boxed observer.
+    ///
+    /// # Performance Warning
+    ///
+    /// Blocks the calling thread until completion and prints a warning.
     fn spawn_static_objsafe_async<'s>(
         &'s mut self,
         task: ObjSafeStaticTask,
@@ -101,10 +289,25 @@ impl SomeStaticExecutor for StaticLastResortExecutor {
         Box::new(std::future::ready(observer))
     }
 
+    /// Creates a boxed clone of this executor for dynamic dispatch.
+    ///
+    /// This enables the executor to be used in contexts requiring trait objects.
+    ///
+    /// # Returns
+    ///
+    /// A boxed clone of the executor.
     fn clone_box(&self) -> Box<DynStaticExecutor> {
         Box::new(self.clone())
     }
 
+    /// Returns the executor's notifier, if available.
+    ///
+    /// The last resort executor does not provide a notifier since it executes
+    /// tasks synchronously and has no event loop to notify.
+    ///
+    /// # Returns
+    ///
+    /// Always returns `None` as this executor has no notification mechanism.
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
         None
     }

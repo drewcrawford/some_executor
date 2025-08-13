@@ -111,6 +111,154 @@ async fn process_data() {
 }
 ```
 
+## Request Tracing Example
+
+A practical example showing how to use task-locals for distributed tracing:
+
+```
+# use some_executor::task_local;
+# use std::time::{SystemTime, UNIX_EPOCH};
+task_local! {
+    static const TRACE_ID: String;
+    static const SPAN_ID: String;
+    static REQUEST_METRICS: RequestMetrics;
+}
+
+#[derive(Default, Clone)]
+struct RequestMetrics {
+    start_time: u64,
+    db_queries: u32,
+    cache_hits: u32,
+}
+
+async fn handle_http_request(request_id: String) {
+    let trace_id = generate_trace_id();
+    let span_id = generate_span_id();
+
+    TRACE_ID.scope(trace_id.clone(), async {
+        SPAN_ID.scope(span_id, async {
+            REQUEST_METRICS.scope(RequestMetrics::default(), async {
+                log_info("Request started");
+
+                // Process the request
+                let user = fetch_user_from_db(123).await;
+                let data = fetch_user_data(user).await;
+
+                // Log metrics at the end
+                REQUEST_METRICS.with(|metrics| {
+                    if let Some(m) = metrics {
+                        log_info(&format!(
+                            "Request completed: {} DB queries, {} cache hits",
+                            m.db_queries, m.cache_hits
+                        ));
+                    }
+                });
+            }).await
+        }).await
+    }).await;
+}
+
+async fn fetch_user_from_db(id: u64) -> String {
+    REQUEST_METRICS.with_mut(|metrics| {
+        if let Some(m) = metrics {
+            m.db_queries += 1;
+        }
+    });
+
+    log_info(&format!("Fetching user {}", id));
+    // Database query here...
+    "user".to_string()
+}
+
+async fn fetch_user_data(user: String) -> Vec<u8> {
+    // Check cache first
+    REQUEST_METRICS.with_mut(|metrics| {
+        if let Some(m) = metrics {
+            m.cache_hits += 1;
+        }
+    });
+
+    log_info(&format!("Fetching data for {}", user));
+    vec![]
+}
+
+fn log_info(message: &str) {
+    TRACE_ID.with(|trace_id| {
+        SPAN_ID.with(|span_id| {
+            let trace = trace_id.as_ref().map(|s| s.as_str()).unwrap_or("none");
+            let span = span_id.as_ref().map(|s| s.as_str()).unwrap_or("none");
+            println!(
+                "[trace:{} span:{}] {}",
+                trace,
+                span,
+                message
+            );
+        });
+    });
+}
+
+fn generate_trace_id() -> String {
+    format!("trace-{}", SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis())
+}
+
+fn generate_span_id() -> String {
+    format!("span-{}", SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() % 1000000)
+}
+```
+
+# Nested Scoping
+
+Task-locals support nested scoping, where inner scopes shadow outer values:
+
+```
+# use some_executor::task_local;
+task_local! {
+    static LEVEL: u32;
+    static const CONTEXT: String;
+}
+
+async fn demonstrate_nesting() {
+    LEVEL.scope(1, async {
+        CONTEXT.scope("outer".to_string(), async {
+            CONTEXT.with(|ctx| {
+                println!("Outer: level={}, context={}",
+                         LEVEL.get(),
+                         ctx.as_ref().unwrap());
+            });
+
+            LEVEL.scope(2, async {
+                CONTEXT.scope("inner".to_string(), async {
+                    CONTEXT.with(|ctx| {
+                        println!("Inner: level={}, context={}",
+                                 LEVEL.get(),
+                                 ctx.as_ref().unwrap());
+
+                        // Inner scope values: level=2, context="inner"
+                        assert_eq!(LEVEL.get(), 2);
+                        assert_eq!(ctx.as_ref().unwrap().as_str(), "inner");
+                    });
+                }).await;
+            }).await;
+
+            // Back to outer scope values
+            CONTEXT.with(|ctx| {
+                println!("After inner: level={}, context={}",
+                         LEVEL.get(),
+                         ctx.as_ref().unwrap());
+                assert_eq!(LEVEL.get(), 1);
+                assert_eq!(ctx.as_ref().unwrap().as_str(), "outer");
+            });
+        }).await;
+    }).await;
+}
+```
+
 # Safety and Best Practices
 
 1. **Always use `with` for safe access**: The `get` method panics if the
@@ -124,6 +272,12 @@ async fn process_data() {
 
 4. **Consider immutability**: Use `const` task-locals for values that
    shouldn't change during execution, like configuration or IDs.
+
+5. **Avoid holding borrows across await points**: When using `with` or
+   `with_mut`, complete the operation before awaiting.
+
+6. **Be mindful of performance**: Task-local access has some overhead due
+   to thread-local storage access and `RefCell` checks.
 */
 
 use std::cell::RefCell;
@@ -300,30 +454,84 @@ macro_rules! __task_local_inner_immutable {
 pub struct LocalKey<T: 'static>(std::thread::LocalKey<RefCell<Option<T>>>);
 
 impl<T: 'static> LocalKey<T> {
+    /// Creates a new `LocalKey` from a thread-local storage key.
+    ///
+    /// This is an internal method used by the `task_local!` macro and should
+    /// not be called directly by users.
     #[doc(hidden)]
     pub const fn new(key: std::thread::LocalKey<RefCell<Option<T>>>) -> Self {
         LocalKey(key)
     }
 }
 
-/**
-Defines an immutable task-local value.
-
-# A word on immutability
-
-Immutable task-locals cannot be mutated while they are in scope.  However, the meaning of this is nonintuitive.
-
-Reading the value of the task-local (such as with [LocalKeyImmutable::get] or [LocalKeyImmutable::with]) can return different results
-at different times, which may be surprising for a 'constant' value.  This is because the value is only constant for the duration of the scope,
-while a future may execute across various scopes at various times.
-
-The primary utility of this type is to forbid "downstream" modifications of the task-local.  For example,
-if a task-local is set in a parent task, it may be desirable to prevent a child task from modifying it.
-*/
+/// An immutable task-local storage key.
+///
+/// This type provides task-local storage that cannot be modified once set within
+/// a scope, offering stronger guarantees than [`LocalKey`] about value stability.
+///
+/// # Immutability Semantics
+///
+/// The term "immutable" here has specific semantics that may be counterintuitive:
+///
+/// - **Within a scope**: Once set via `scope()`, the value cannot be changed
+///   by `set()` or `replace()` methods (these methods don't exist)
+/// - **Across scopes**: The same task-local can have different values in nested
+///   scopes, and a future may observe different values as it executes across
+///   scope boundaries
+/// - **Primary use case**: Preventing downstream code from modifying configuration
+///   or context values that should remain stable
+///
+/// # Examples
+///
+/// ```
+/// # use some_executor::task_local;
+/// task_local! {
+///     static const CONFIG: String;
+///     static MUTABLE_STATE: Vec<String>;
+/// }
+///
+/// async fn demonstrate_immutability() {
+///     CONFIG.scope("production".to_string(), async {
+///         // This would not compile - no set() method:
+///         // CONFIG.set("development".to_string());
+///         
+///         // Access the immutable value
+///         CONFIG.with(|cfg| {
+///             assert_eq!(cfg.as_ref().unwrap().as_str(), "production");
+///         });
+///         
+///         // But MUTABLE_STATE can be modified:
+///         MUTABLE_STATE.scope(vec![], async {
+///             MUTABLE_STATE.with_mut(|v| {
+///                 if let Some(vec) = v {
+///                     vec.push("log".to_string());
+///                 }
+///             });
+///         }).await;
+///     }).await;
+/// }
+/// ```
+///
+/// # When to Use
+///
+/// Use `LocalKeyImmutable` for:
+/// - Request IDs, trace IDs, and correlation identifiers
+/// - User context and authentication information  
+/// - Environment configuration
+/// - Any value that should remain constant within a scope
+///
+/// Use regular [`LocalKey`] for:
+/// - Accumulators and counters
+/// - Mutable state that changes during execution
+/// - Caches and temporary storage
 #[derive(Debug)]
 pub struct LocalKeyImmutable<T: 'static>(std::thread::LocalKey<RefCell<Option<T>>>);
 
 impl<T: 'static> LocalKeyImmutable<T> {
+    /// Creates a new `LocalKeyImmutable` from a thread-local storage key.
+    ///
+    /// This is an internal method used by the `task_local!` macro and should
+    /// not be called directly by users.
     #[doc(hidden)]
     pub const fn new(key: std::thread::LocalKey<RefCell<Option<T>>>) -> Self {
         LocalKeyImmutable(key)
@@ -333,8 +541,24 @@ impl<T: 'static> LocalKeyImmutable<T> {
 /// A future that sets a value `T` of a task local for the future `F` during
 /// its execution.
 ///
+/// This future wraps another future and ensures that a task-local value is
+/// available during the wrapped future's execution. The task-local value is
+/// stored in a slot and swapped into thread-local storage each time the future
+/// is polled, then swapped back out when polling completes.
+///
 /// The value of the task-local must be `'static` and will be dropped on the
 /// completion of the future.
+///
+/// # Implementation Details
+///
+/// The future maintains the task-local value in a `slot` field. During each
+/// poll:
+/// 1. The value is moved from the slot into thread-local storage
+/// 2. The wrapped future is polled
+/// 3. The value is moved back from thread-local storage to the slot
+///
+/// This ensures the value is available to the future and any code it calls,
+/// while keeping it safe from concurrent access.
 ///
 /// Created by the function [`LocalKey::scope`](self::LocalKey::scope).
 #[derive(Debug)]
@@ -344,6 +568,20 @@ pub(crate) struct TaskLocalFuture<V: 'static, F> {
     future: F,
 }
 
+/// A future that sets an immutable task-local value for the duration of
+/// another future's execution.
+///
+/// Similar to [`TaskLocalFuture`], but for immutable task-locals that cannot
+/// be modified once set within a scope. This provides stronger guarantees about
+/// the stability of configuration values during task execution.
+///
+/// # Implementation Details
+///
+/// Works identically to `TaskLocalFuture` in terms of the slot/swap mechanism,
+/// but the associated `LocalKeyImmutable` type prevents mutation of the value
+/// while it's in scope.
+///
+/// Created by the function [`LocalKeyImmutable::scope`](self::LocalKeyImmutable::scope).
 #[derive(Debug)]
 pub(crate) struct TaskLocalImmutableFuture<V: 'static, F> {
     slot: Option<V>,
@@ -416,6 +654,10 @@ impl<V, F> TaskLocalImmutableFuture<V, F> {
     // }
 }
 
+/// Implementation of `Future` for `TaskLocalFuture`.
+///
+/// This implementation handles the mechanics of swapping task-local values
+/// in and out of thread-local storage during polling.
 impl<V, F> Future for TaskLocalFuture<V, F>
 where
     V: Unpin,
@@ -445,6 +687,10 @@ where
     }
 }
 
+/// Implementation of `Future` for `TaskLocalImmutableFuture`.
+///
+/// This implementation handles the mechanics of swapping immutable task-local
+/// values in and out of thread-local storage during polling.
 impl<V, F> Future for TaskLocalImmutableFuture<V, F>
 where
     V: Unpin,
@@ -475,7 +721,11 @@ where
 }
 
 impl<T: 'static> LocalKey<T> {
-    /// Sets the value of the task-local for the duration of the future `F`.
+    /// Internal method to create a scoped task-local future.
+    ///
+    /// This method is used internally by the public `scope` method. It creates
+    /// a `TaskLocalFuture` that will manage the task-local value during the
+    /// execution of the provided future.
     pub(crate) fn scope_internal<F>(&'static self, value: T, f: F) -> TaskLocalFuture<T, F>
     where
         F: Future,
@@ -720,7 +970,11 @@ impl<T: 'static> LocalKey<T> {
 }
 
 impl<T: 'static> LocalKeyImmutable<T> {
-    /// Sets the value of the task-local for the duration of the future `F`.
+    /// Internal method to create a scoped immutable task-local future.
+    ///
+    /// This method is used internally by the public `scope` method. It creates
+    /// a `TaskLocalImmutableFuture` that will manage the immutable task-local
+    /// value during the execution of the provided future.
     pub(crate) fn scope_internal<F>(&'static self, value: T, f: F) -> TaskLocalImmutableFuture<T, F>
     where
         F: Future,
@@ -858,13 +1112,22 @@ impl<T: 'static> LocalKeyImmutable<T> {
         })
     }
 
-    /**
-    Accesses the underlying task-local inside the closure, mutably.
-
-    # Safety
-    This is unsafe because the type guarantees the type is immutable, but you are mutating it
-    outside of the scope of the task-local.
-    */
+    /// Accesses the underlying task-local inside the closure, mutably.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it violates the immutability guarantee
+    /// of `LocalKeyImmutable`. It allows mutation of a value that is supposed
+    /// to be immutable within its scope.
+    ///
+    /// This method is intended for internal use only and should not be exposed
+    /// in the public API. It may be used by the framework itself for special
+    /// cases where controlled mutation is necessary.
+    ///
+    /// # Panics
+    ///
+    /// May panic if the value is already borrowed, following `RefCell` borrowing
+    /// rules.
     pub(crate) unsafe fn with_mut<F, R>(&'static self, f: F) -> R
     where
         F: FnOnce(&mut Option<T>) -> R,

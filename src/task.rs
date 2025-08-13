@@ -265,15 +265,36 @@ where
 }
 
 impl<F: Future, N> Task<F, N> {
-    /**
-    Creates a new task.
-
-    # Parameters
-    - `label`: A human-readable label for the task.
-    - `configuration`: Configuration for the task.
-    - `notifier`: An observer to notify when the task completes.  If there is no notifier, consider using [Self::without_notifications] instead.
-    - `future`: The future to run.
-    */
+    /// Creates a new task with optional completion notifications.
+    ///
+    /// This constructor creates a task that can optionally notify an observer when it completes.
+    /// If you don't need notifications, consider using [`without_notifications`](Self::without_notifications) instead.
+    ///
+    /// # Arguments
+    ///
+    /// * `label` - A human-readable label for debugging and monitoring
+    /// * `configuration` - Runtime hints and scheduling preferences
+    /// * `notifier` - Optional observer to notify on task completion
+    /// * `future` - The async computation to execute
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, Configuration};
+    /// use some_executor::observer::ObserverNotified;
+    ///
+    /// # struct MyNotifier;
+    /// # impl ObserverNotified<i32> for MyNotifier {
+    /// #     fn notify(&mut self, value: &i32) {}
+    /// # }
+    ///
+    /// let task = Task::with_notifications(
+    ///     "compute-result".to_string(),
+    ///     Configuration::default(),
+    ///     Some(MyNotifier),
+    ///     async { 42 }
+    /// );
+    /// ```
     pub fn with_notifications(
         label: String,
         configuration: Configuration,
@@ -365,23 +386,32 @@ impl<F: Future, N> Task<F, N> {
 //infalliable notification methods
 
 impl<F: Future> Task<F, Infallible> {
-    /**
-    Spawns a task, without performing inline notification.
-
-    Use this constructor when there are no cancellation notifications desired.
-
-    # Parameters
-    - `label`: A human-readable label for the task.
-    - `configuration`: Configuration for the task.
-    - `future`: The future to run.
-
-
-    # Details
-
-    Use of this function is equivalent to calling [Task::with_notifications] with a None notifier.
-
-    This function avoids the need to specify the type parameter to [Task].
-    */
+    /// Creates a task without completion notifications.
+    ///
+    /// This is a convenience constructor for tasks that don't need observers.
+    /// It's equivalent to calling [`with_notifications`](Self::with_notifications) with `None`
+    /// but avoids the need to specify the notification type parameter.
+    ///
+    /// # Arguments
+    ///
+    /// * `label` - A human-readable label for debugging and monitoring
+    /// * `configuration` - Runtime hints and scheduling preferences
+    /// * `future` - The async computation to execute
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, Configuration};
+    ///
+    /// let task = Task::without_notifications(
+    ///     "background-work".to_string(),
+    ///     Configuration::default(),
+    ///     async {
+    ///         println!("Working in the background");
+    ///         42
+    ///     }
+    /// );
+    /// ```
     pub fn without_notifications(label: String, configuration: Configuration, future: F) -> Self {
         Task::with_notifications(label, configuration, None, future)
     }
@@ -517,50 +547,70 @@ impl<F: Future<Output = ()>, N> Task<F, N> {
 }
 
 impl<F: Future, N> Task<F, N> {
-    /**
-    Pins a task to run on the current thread; converts non-Send futures to Send futures.
-
-    # Discussion
-
-    In Rust we prefer Send futures, which allow the executor to move tasks between threads at await
-    points.  Doing this allows the executor to rebalance the load after futures have begun executing.
-    For example, the future can resume on the first available thread, rather than the thread it started
-    on.
-
-    This optimization requires that the future is Send, which means that it can't hold a non-Send type
-    across an await point.  This is a problem for futures that work with non-Send types, such as
-    Rc or RefCell.
-
-    When this is a problem, you can use this function to pin a non-Send task to the current thread.
-
-    # Downsides
-
-    This is a completely legitimate solution to the problem but it has some downsides:
-    1.  By nature, a non-Send future cannot be moved around in the thread pool, so it is necessarily
-        less efficient than a Send future.
-    2.  There is some small runtime overhead to handing the Send-to-!Send mismatch.
-    3.  We go ahead and spawn the task before the return future is polled, which is nonstandard
-        in Rust.  However, it is necessary because we must use the current thread to run non-Send tasks.
-    4.  Cancellation is not supported very well.
-
-    Because of these downsides, consider these alternatives to this function:
-
-    1.  Consider using Send/Sync types where available.
-    2.  Consider using a block scope to isolate non-Send types when they don't need to be held across
-        await points.  See the example at https://rust-lang.github.io/async-book/07_workarounds/03_send_approximation.html.
-    3.  Consider using the [SomeStaticExecutor] methods directly.  The trouble is the trait itself
-        does not require the observer to be Send as not all executors will support it.  But if you know
-        the concrete type and it supports this, you can use it directly.
-
-    This function primarily comes into play when none of the other alternatives are viable, such as
-    when Send/Sync types are unavoidable, must be held across await, the executor type is either
-    erased or does not support Send.
-
-    # See also
-    [crate::thread_executor::pin_static_to_thread] for a more general-purpose pinning function.
-
-
-    */
+    /// Pins a task to run on the current thread, converting non-Send futures to Send futures.
+    ///
+    /// This method allows you to work with non-Send types (like `Rc`, `RefCell`) in an async
+    /// context by ensuring the task runs only on the current thread.
+    ///
+    /// # When to Use
+    ///
+    /// Use this when:
+    /// - You need to work with non-Send types across await points
+    /// - The executor type is erased or doesn't support non-Send directly
+    /// - Converting to Send types isn't feasible
+    ///
+    /// # Trade-offs
+    ///
+    /// **Pros:**
+    /// - Enables use of non-Send types in async code
+    /// - Works with any executor type
+    ///
+    /// **Cons:**
+    /// - Task cannot be moved between threads (less efficient)
+    /// - Small runtime overhead for the Send/!Send bridge
+    /// - Task spawns immediately (before the returned future is polled)
+    /// - Limited cancellation support
+    ///
+    /// # Alternatives
+    ///
+    /// Consider these alternatives before using this method:
+    ///
+    /// 1. Use Send/Sync types where possible (`Arc` instead of `Rc`)
+    /// 2. Scope non-Send types to avoid holding them across await points
+    ///    (see <https://rust-lang.github.io/async-book/07_workarounds/03_send_approximation.html>)
+    /// 3. Use [`SomeStaticExecutor`](crate::SomeStaticExecutor) methods directly if the concrete type supports it
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, Configuration};
+    /// use std::rc::Rc;
+    ///
+    /// # async fn example() {
+    /// // Rc is !Send
+    /// let data = Rc::new(vec![1, 2, 3]);
+    /// let data_clone = data.clone();
+    ///
+    /// let task = Task::without_notifications(
+    ///     "process-local-data".to_string(),
+    ///     Configuration::default(),
+    ///     async move {
+    ///         // Can use Rc across await points
+    ///         println!("Data: {:?}", data_clone);
+    ///         data_clone.len()
+    ///     }
+    /// );
+    ///
+    /// // Convert to Send future that runs on current thread
+    /// let send_future = task.pin_current();
+    /// let result = send_future.await;
+    /// assert_eq!(result, 3);
+    /// # }
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// - [`crate::thread_executor::pin_static_to_thread`] for a more general-purpose pinning function
     pub fn pin_current(self) -> impl Future<Output = F::Output> + Send
     where
         F: 'static,
@@ -580,9 +630,33 @@ impl
         Box<dyn ObserverNotified<dyn Any + Send> + Send>,
     >
 {
-    /**
-            Creates a new objsafe future
-    */
+    /// Creates a new object-safe task for type-erased spawning.
+    ///
+    /// This constructor is used internally to create tasks that can be spawned
+    /// using object-safe trait methods, where the concrete future type is erased.
+    ///
+    /// # Arguments
+    ///
+    /// * `label` - A human-readable label for the task
+    /// * `future` - A boxed future that outputs a boxed `Any + Send` value
+    /// * `configuration` - Runtime hints and scheduling preferences
+    /// * `notifier` - Optional boxed observer for completion notifications
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, Configuration};
+    /// use std::any::Any;
+    ///
+    /// let task = Task::new_objsafe(
+    ///     "type-erased".to_string(),
+    ///     Box::new(async {
+    ///         Box::new(42) as Box<dyn Any + Send>
+    ///     }),
+    ///     Configuration::default(),
+    ///     None,
+    /// );
+    /// ```
     pub fn new_objsafe(
         label: String,
         future: Box<dyn Future<Output = Box<dyn Any + Send + 'static>> + Send + 'static>,
@@ -599,9 +673,38 @@ impl
         Box<dyn ObserverNotified<dyn Any + 'static>>,
     >
 {
-    /**
-            Creates a new local objsafe future
-    */
+    /// Creates a new object-safe task for local (non-Send) type-erased spawning.
+    ///
+    /// This constructor is used internally to create tasks that can be spawned
+    /// on local executors using object-safe trait methods. The task doesn't need
+    /// to be `Send` but must be `'static`.
+    ///
+    /// # Arguments
+    ///
+    /// * `label` - A human-readable label for the task
+    /// * `future` - A boxed future that outputs a boxed `Any` value
+    /// * `configuration` - Runtime hints and scheduling preferences
+    /// * `notifier` - Optional boxed observer for completion notifications
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, Configuration};
+    /// use std::any::Any;
+    /// use std::rc::Rc;
+    ///
+    /// // Rc is !Send
+    /// let data = Rc::new(42);
+    ///
+    /// let task = Task::new_objsafe_local(
+    ///     "local-type-erased".to_string(),
+    ///     Box::new(async move {
+    ///         Box::new(*data) as Box<dyn Any>
+    ///     }),
+    ///     Configuration::default(),
+    ///     None,
+    /// );
+    /// ```
     pub fn new_objsafe_local(
         label: String,
         future: Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>,
