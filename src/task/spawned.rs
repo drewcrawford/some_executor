@@ -117,6 +117,7 @@ where
 /// Local tasks must be polled explicitly with a reference to their executor:
 ///
 /// ```no_run
+/// # // not runnable because we use `todo!()`
 /// # use std::convert::Infallible;
 /// use some_executor::task::SpawnedLocalTask;
 /// # use std::task::Context;
@@ -467,7 +468,6 @@ where
     //after poll, we need to set our properties
     unsafe {
         TASK_LABEL.with_mut(|l| {
-            eprintln!("Polling task with original label: {hold_original_label_for_debug:?}");
             *state.label = old_label;
         });
         IS_CANCELLED.with_mut(|c| {
@@ -505,13 +505,34 @@ impl<F: Future, ONotifier, E> SpawnedTask<F, ONotifier, E>
 where
     ONotifier: ObserverNotified<F::Output>,
 {
-    /**
-    Polls the task.  This has the standard semantics for Rust futures.
-
-    # Parameters
-    - `cx`: The context for the poll.
-    - `local_executor`: A local executor, if available.  This will be used to populate the thread-local [TASK_LOCAL_EXECUTOR] variable.
-    */
+    /// Polls the spawned task to advance its execution.
+    ///
+    /// This method polls the underlying future while setting up the appropriate task-local
+    /// context variables that the future can access during execution.
+    ///
+    /// # Arguments
+    ///
+    /// * `cx` - The waker context for async execution
+    /// * `local_executor` - Optional local executor for spawning thread-local tasks from within this task
+    ///
+    /// # Task-Local Variables
+    ///
+    /// During polling, the following task-local variables are set:
+    /// - [`TASK_LABEL`] - The task's label
+    /// - [`TASK_ID`] - The task's unique identifier  
+    /// - [`TASK_PRIORITY`] - The task's priority
+    /// - [`IS_CANCELLED`] - Cancellation status
+    /// - [`TASK_EXECUTOR`] - Reference to the executor (if available)
+    /// - [`TASK_LOCAL_EXECUTOR`] - Reference to the local executor (if provided)
+    ///
+    /// # Returns
+    ///
+    /// - `Poll::Ready(())` when the task completes or is cancelled
+    /// - `Poll::Pending` if the task needs to be polled again
+    ///
+    /// # Panics
+    ///
+    /// Panics if called before the task's `poll_after` time (executors should respect this).
     pub fn poll<'l, L>(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -570,9 +591,10 @@ where
     ONotifier: ObserverNotified<F::Output>,
 {
     type Output = ();
-    /**
-        Implements Future trait by declining to set a local context.
-    */
+    /// Polls the task as a standard Rust future.
+    ///
+    /// This implementation of the `Future` trait polls the task without providing
+    /// a local executor context. Task-local variables are still set up during polling.
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         SpawnedTask::poll::<Infallible>(self, cx, None)
     }
@@ -586,14 +608,32 @@ where
 {
     //I can't believe it's not future
 
-    /**
-    Polls the task.  This has the standard semantics for Rust futures.
-
-    # Parameters
-    - `cx`: The context for the poll.
-    - `executor`: The executor the task was spawned on.  This will be used to populate the thread-local [TASK_LOCAL_EXECUTOR] variable.
-    - `some_executor`: An executor for spawning new tasks, if desired.  This is used to populate the task-local [TASK_EXECUTOR] variable.
-    */
+    /// Polls the spawned local task to advance its execution.
+    ///
+    /// Unlike [`SpawnedTask`] which implements `Future`, local tasks must be polled
+    /// explicitly with their executor. This is because local executors may be
+    /// implemented as references that cannot be stored.
+    ///
+    /// # Arguments
+    ///
+    /// * `cx` - The waker context for async execution
+    /// * `executor` - The local executor that owns this task
+    /// * `some_executor` - Optional executor for spawning Send tasks from within this task
+    ///
+    /// # Task-Local Variables
+    ///
+    /// During polling, the following task-local variables are set:
+    /// - [`TASK_LABEL`] - The task's label
+    /// - [`TASK_ID`] - The task's unique identifier
+    /// - [`TASK_PRIORITY`] - The task's priority
+    /// - [`IS_CANCELLED`] - Cancellation status
+    /// - [`TASK_LOCAL_EXECUTOR`] - Reference to the provided local executor
+    /// - [`TASK_EXECUTOR`] - Reference to the Send executor (if provided)
+    ///
+    /// # Returns
+    ///
+    /// - `Poll::Ready(())` when the task completes or is cancelled
+    /// - `Poll::Pending` if the task needs to be polled again
     pub fn poll(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,

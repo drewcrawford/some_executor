@@ -84,7 +84,7 @@ impl<F: Future, N> Task<F, N> {
     /// This method transfers ownership of the task to the executor, which will poll it
     /// to completion. It returns a tuple containing:
     ///
-    /// 1. A [`SpawnedTask`] that can be polled by the executor
+    /// 1. A [`spawned::SpawnedTask`] that can be polled by the executor
     /// 2. A [`TypedObserver`] that can be used to await or check the task's completion
     ///
     /// # Arguments
@@ -184,7 +184,7 @@ impl<F: Future, N> Task<F, N> {
     /// # Returns
     ///
     /// A tuple containing:
-    /// 1. A [`SpawnedLocalTask`] that can be polled by the executor
+    /// 1. A [`spawned::SpawnedLocalTask`] that can be polled by the executor
     /// 2. A [`TypedObserver`] that can be used to await or check the task's completion
     ///
     /// # Examples
@@ -264,7 +264,7 @@ impl<F: Future, N> Task<F, N> {
     /// # Returns
     ///
     /// A tuple containing:
-    /// 1. A [`SpawnedStaticTask`] that can be polled by the executor
+    /// 1. A [`spawned::SpawnedStaticTask`] that can be polled by the executor
     /// 2. A [`TypedObserver`] that can be used to await or check the task's completion
     ///
     /// # Examples
@@ -332,22 +332,73 @@ impl<F: Future, N> Task<F, N> {
         (spawned_task, receiver)
     }
 
-    /**
-    Spawns the task onto a local executor.
-
-    # Objsafe
-
-    A word on exactly what 'objsafe' means in this context.  Objsafe means that whoever is spawning the task,
-    doesn't know which executor they are using, so they spawn onto an objsafe executor via the objsafe methods.
-
-    This has two implications.  First, we need to hide the executor type from the spawner.  However, we don't need
-    to hide it from the *executor*, since the executor knows what it is.  Accordingly, this information is erased
-    with respect to types sent to the spawner, and not erased with respect to types sent
-    to the executor.
-
-    Second, the objsafe spawn method cannot have any generics.  Therefore, the future type is erased (boxed) and worse,
-    the output type is erased as well.  Accordingly we do not know what it is.
-    */
+    /// Spawns the task onto an executor using object-safe type erasure.
+    ///
+    /// This method enables spawning tasks when the executor type is not known at compile time,
+    /// using dynamic dispatch instead of static dispatch. The spawner receives type-erased
+    /// handles while the executor still works with concrete types.
+    ///
+    /// # Object Safety
+    ///
+    /// "Object-safe" here means the method can be called through a trait object (`dyn SomeExecutor`).
+    /// This requires:
+    /// - No generic parameters in the trait method signature
+    /// - Type erasure of the future and its output type
+    ///
+    /// # Type Erasure
+    ///
+    /// The method erases types for the spawner but not the executor:
+    /// - **Spawner side**: Receives boxed, type-erased observer
+    /// - **Executor side**: Still works with the concrete future type
+    ///
+    /// # Arguments
+    ///
+    /// * `executor` - The executor that will run this task
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// 1. A [`spawned::SpawnedTask`] with the concrete future type
+    /// 2. A [`TypedObserver`] with a boxed executor notifier
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use some_executor::task::{Task, Configuration};
+    /// # use some_executor::SomeExecutor;
+    /// # use some_executor::observer::{Observer, ObserverNotified, TypedObserver};
+    /// # use std::any::Any;
+    /// # use std::pin::Pin;
+    /// # use std::future::Future;
+    /// # use std::convert::Infallible;
+    /// #
+    /// # // Mock executor for testing
+    /// # #[derive(Debug, Clone)]
+    /// # struct TestExecutor;
+    /// # impl SomeExecutor for TestExecutor {
+    /// #     type ExecutorNotifier = Infallible;
+    /// #     fn spawn<F, N>(&mut self, task: Task<F, N>) -> impl Observer<Value = F::Output>
+    /// #     where F: Future + Send + 'static, N: ObserverNotified<F::Output> + Send + 'static, F::Output: Send + 'static
+    /// #     { todo!() as TypedObserver<F::Output, Infallible> }
+    /// #     fn spawn_async<F, N>(&mut self, task: Task<F, N>) -> impl Future<Output = impl Observer<Value = F::Output>>
+    /// #     where F: Future + Send + 'static, N: ObserverNotified<F::Output> + Send + 'static, F::Output: Send + 'static
+    /// #     { async { todo!() as TypedObserver<F::Output, Infallible> } }
+    /// #     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> { None }
+    /// #     fn clone_box(&self) -> Box<dyn SomeExecutor<ExecutorNotifier = Self::ExecutorNotifier>> { Box::new(self.clone()) }
+    /// #     fn spawn_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + Send>> + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Observer<Value=Box<dyn Any + Send>, Output=some_executor::observer::FinishedObservation<Box<dyn Any + Send>>> + Send> { todo!() }
+    /// #     fn spawn_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output=Box<dyn Any + Send>> + Send>>, Box<dyn ObserverNotified<dyn Any + Send> + Send>>) -> Box<dyn Future<Output=Box<dyn Observer<Value=Box<dyn Any + Send>, Output=some_executor::observer::FinishedObservation<Box<dyn Any + Send>>> + Send>> + 's> { Box::new(async { todo!() }) }
+    /// # }
+    /// #
+    /// let mut executor = TestExecutor;
+    /// let task = Task::without_notifications(
+    ///     "objsafe-task".to_string(),
+    ///     Configuration::default(),
+    ///     async { "result" }
+    /// );
+    ///
+    /// let (spawned, observer) = task.spawn_objsafe(&mut executor);
+    /// // Observer has type-erased executor notifier
+    /// ```
     pub fn spawn_objsafe<Executor: SomeExecutor>(
         mut self,
         executor: &mut Executor,
@@ -378,22 +429,70 @@ impl<F: Future, N> Task<F, N> {
         (spawned_task, receiver)
     }
 
-    /**
-    Spawns the task onto a local executor.
-
-    # Objsafe
-
-    A word on exactly what 'objsafe' means in this context.  Objsafe means that whoever is spawning the task,
-    doesn't know which executor they are using, so they spawn onto an objsafe executor via the objsafe methods.
-
-    This has two implications.  First, we need to hide the executor type from the spawner.  However, we don't need
-    to hide it from the *executor*, since the executor knows what it is.  Accordingly this information is erased
-    with respect to types sent to the spawner, and not erased with respect to types sent
-    to the executor.
-
-    Second, the objsafe spawn method cannot have any generics.  Therefore, the future type is erased (boxed) and worse,
-    the output type is erased as well.  Accordingly we do not know what it is.
-    */
+    /// Spawns the task onto a local executor using object-safe type erasure.
+    ///
+    /// Similar to [`spawn_objsafe`](Self::spawn_objsafe) but for local executors that
+    /// don't require `Send`. This enables spawning tasks on thread-local executors
+    /// when the executor type is not known at compile time.
+    ///
+    /// # Object Safety
+    ///
+    /// This method provides the same type erasure benefits as `spawn_objsafe` but
+    /// for local executors. The spawner receives type-erased handles while the
+    /// executor continues to work with concrete types.
+    ///
+    /// # Arguments
+    ///
+    /// * `executor` - The local executor that will run this task
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// 1. A [`spawned::SpawnedLocalTask`] with the concrete future type
+    /// 2. A [`TypedObserver`] with a boxed executor notifier
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use some_executor::task::{Task, Configuration};
+    /// # use some_executor::SomeLocalExecutor;
+    /// # use some_executor::observer::{Observer, ObserverNotified, FinishedObservation, TypedObserver};
+    /// # use std::rc::Rc;
+    /// # use std::any::Any;
+    /// # use std::pin::Pin;
+    /// # use std::future::Future;
+    /// # use std::convert::Infallible;
+    /// #
+    /// # // Mock local executor for testing
+    /// # #[derive(Debug)]
+    /// # struct TestLocalExecutor;
+    /// # impl<'a> SomeLocalExecutor<'a> for TestLocalExecutor {
+    /// #     type ExecutorNotifier = Infallible;
+    /// #     fn spawn_local<F: Future, N: ObserverNotified<F::Output>>(&mut self, task: Task<F, N>) -> impl Observer<Value = F::Output>
+    /// #     where F: 'a, F::Output: 'static
+    /// #     { todo!() as TypedObserver<F::Output, Infallible> }
+    /// #     fn spawn_local_async<F: Future, N: ObserverNotified<F::Output>>(&mut self, task: Task<F, N>) -> impl Future<Output = impl Observer<Value = F::Output>>
+    /// #     where F: 'a, F::Output: 'static
+    /// #     { async { todo!() as TypedObserver<F::Output, Infallible> } }
+    /// #     fn spawn_local_objsafe(&mut self, task: Task<Pin<Box<dyn Future<Output = Box<dyn Any>>>>, Box<dyn ObserverNotified<dyn Any + 'static>>>) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>
+    /// #     { todo!() }
+    /// #     fn spawn_local_objsafe_async<'s>(&'s mut self, task: Task<Pin<Box<dyn Future<Output = Box<dyn Any>>>>, Box<dyn ObserverNotified<dyn Any + 'static>>>) -> Box<dyn Future<Output = Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>> + 's>
+    /// #     { Box::new(async { todo!() }) }
+    /// #     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> { None }
+    /// # }
+    /// #
+    /// let mut executor = TestLocalExecutor;
+    /// // Works with !Send types
+    /// let data = Rc::new(42);
+    /// let data_clone = data.clone();
+    /// let task = Task::without_notifications(
+    ///     "local-objsafe".to_string(),
+    ///     Configuration::default(),
+    ///     async move { *data_clone }
+    /// );
+    ///
+    /// let (spawned, observer) = task.spawn_local_objsafe(&mut executor);
+    /// ```
     pub fn spawn_local_objsafe<'executor, Executor: SomeLocalExecutor<'executor>>(
         mut self,
         executor: &mut Executor,
@@ -436,7 +535,7 @@ impl<F: Future, N> Task<F, N> {
     /// # Returns
     ///
     /// A tuple containing:
-    /// 1. A [`SpawnedStaticTask`] that can be polled by the executor
+    /// 1. A [`spawned::SpawnedStaticTask`] that can be polled by the executor
     /// 2. A [`TypedObserver`] that can be used to await or check the task's completion
     pub fn spawn_static_objsafe<Executor: SomeStaticExecutor>(
         mut self,
@@ -468,9 +567,33 @@ impl<F: Future, N> Task<F, N> {
         (spawned_task, receiver)
     }
 
-    /**
-    Converts this task into one suitable for spawn_objsafe
-    */
+    /// Converts this task into an object-safe task for type-erased spawning.
+    ///
+    /// This method transforms a concrete task into one that can be spawned using
+    /// [`spawn_objsafe`](crate::SomeExecutor::spawn_objsafe) on executors accessed
+    /// through trait objects.
+    ///
+    /// # Requirements
+    ///
+    /// - Future must be `Send + 'static`
+    /// - Future output must be `Send + 'static + Unpin`
+    /// - Notifier must be `Send`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, Configuration};
+    ///
+    /// let task = Task::without_notifications(
+    ///     "my-task".to_string(),
+    ///     Configuration::default(),
+    ///     async { 42 }
+    /// );
+    ///
+    /// // Convert to object-safe task
+    /// let objsafe_task = task.into_objsafe();
+    /// // Now can be spawned on `dyn SomeExecutor`
+    /// ```
     pub fn into_objsafe(self) -> ObjSafeTask
     where
         N: ObserverNotified<F::Output> + Send,
@@ -489,9 +612,36 @@ impl<F: Future, N> Task<F, N> {
         )
     }
 
-    /**
-    Converts this task into one suitable for spawn_local_objsafe
-    */
+    /// Converts this task into an object-safe task for local type-erased spawning.
+    ///
+    /// This method transforms a concrete task into one that can be spawned using
+    /// [`spawn_local_objsafe`](crate::SomeLocalExecutor::spawn_local_objsafe) on
+    /// local executors accessed through trait objects.
+    ///
+    /// # Requirements
+    ///
+    /// - Future must be `'static` (but not necessarily `Send`)
+    /// - Future output must be `'static + Unpin`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use some_executor::task::{Task, Configuration};
+    /// use std::rc::Rc;
+    ///
+    /// // Works with !Send types
+    /// let data = Rc::new(vec![1, 2, 3]);
+    /// let data_clone = data.clone();
+    /// let task = Task::without_notifications(
+    ///     "local-task".to_string(),
+    ///     Configuration::default(),
+    ///     async move { data_clone.len() }
+    /// );
+    ///
+    /// // Convert to object-safe local task
+    /// let objsafe_task = task.into_objsafe_local();
+    /// // Now can be spawned on `dyn SomeLocalExecutor`
+    /// ```
     pub fn into_objsafe_local(self) -> ObjSafeLocalTask
     where
         N: ObserverNotified<F::Output>,

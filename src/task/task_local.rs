@@ -31,6 +31,7 @@ type ThreadLocalExecutor = RefCell<
 /// Tasks can check their cancellation status via the task-local variable:
 ///
 /// ```no_run
+///# // can't run because we're not in a task context
 /// // Inside a task's future, IS_CANCELLED can be accessed:
 ///  use some_executor::task::IS_CANCELLED;
 ///  if IS_CANCELLED.with(|c| c.expect("No task").is_cancelled()) {
@@ -60,6 +61,7 @@ impl InFlightTaskCancellation {
     /// # Examples
     ///
     /// ```no_run
+    /// # // can't run because we're not in a task context
     /// // Inside a long-running task:
     /// # use some_executor::task::IS_CANCELLED;
     /// for i in 0..1000 {
