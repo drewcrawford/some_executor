@@ -1,13 +1,15 @@
 # matrix v2
 on: [push,pull_request]
 env:
-  RUSTFLAGS: "-D warnings"
+  CARGO_RUSTFLAGS_CONFIG: 'build.rustflags=["-D","warnings"]'
+
 
 jobs:
   ci:
     name: Build (${{ matrix.os }} ${{ matrix.channel }} ${{ matrix.target }} ${{ matrix.features }})
 
     runs-on: ${{matrix.os}}
+
 
     strategy:
       matrix:
@@ -79,16 +81,16 @@ jobs:
           rustup ${{ matrix.channel }} component add rust-src
 
       - name: rustfmt
-        run: cargo ${{ matrix.channel }} fmt --check
+        run: cargo ${{ matrix.channel }} --config $CARGO_RUSTFLAGS_CONFIG fmt --check
 
       - name: cargo check
-        run: cargo ${{ matrix.channel }} check ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
+        run: cargo ${{ matrix.channel }} --config $CARGO_RUSTFLAGS_CONFIG  check ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
 
       - name: clippy
-        run: cargo ${{ matrix.channel }} clippy --no-deps ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
+        run: cargo ${{ matrix.channel }} --config $CARGO_RUSTFLAGS_CONFIG clippy --no-deps ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
 
       - name: docs
-        run: cargo ${{ matrix.channel }} doc ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
+        run: cargo ${{ matrix.channel }} --config $CARGO_RUSTFLAGS_CONFIG doc ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
 
       - name: tests
-        run: cargo ${{ matrix.channel }} test ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
+        run: cargo ${{ matrix.channel }} --config $CARGO_RUSTFLAGS_CONFIG test ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
