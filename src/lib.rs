@@ -116,6 +116,10 @@ pub mod thread_executor;
 
 pub use sys::Instant;
 
+/// Task priority for scheduling hints.
+///
+/// This is a re-export of the priority crate's Priority type,
+/// allowing executors to make scheduling decisions based on task priority.
 pub type Priority = priority::Priority;
 
 use crate::observer::{
@@ -130,55 +134,87 @@ use std::pin::Pin;
 
 // Type aliases for complex types to satisfy clippy::type_complexity warnings
 
-/// Type alias for a boxed future that outputs boxed Any and is Send + 'static
+/// Type alias for a boxed future that outputs boxed Any and is Send + 'static.
+///
+/// This type is used for type-erased futures that can be sent between threads.
+/// It's primarily used internally for object-safe trait implementations.
 pub type BoxedSendFuture =
     Pin<Box<dyn Future<Output = Box<dyn Any + 'static + Send>> + 'static + Send>>;
 
-/// Type alias for a boxed observer notifier that handles Send Any values
+/// Type alias for a boxed observer notifier that handles Send Any values.
+///
+/// This type provides notifications when a type-erased Send task completes.
 pub type BoxedSendObserverNotifier = Box<dyn ObserverNotified<dyn Any + Send> + Send>;
 
-/// Type alias for a Task that can be used with object-safe spawning
+/// Type alias for a Task that can be used with object-safe spawning.
+///
+/// This allows spawning type-erased tasks through trait objects,
+/// enabling dynamic dispatch when concrete types aren't known at compile time.
 pub type ObjSafeTask = Task<BoxedSendFuture, BoxedSendObserverNotifier>;
 
-/// Type alias for a boxed observer that handles Send Any values
+/// Type alias for a boxed observer that handles Send Any values.
+///
+/// This observer can be used to track the status and result of type-erased Send tasks.
 pub type BoxedSendObserver = Box<
     dyn Observer<Value = Box<dyn Any + Send>, Output = FinishedObservation<Box<dyn Any + Send>>>
         + Send,
 >;
 
-/// Type alias for a future that returns a boxed observer for Send Any values
+/// Type alias for a future that returns a boxed observer for Send Any values.
+///
+/// Used for async spawning methods that return observers asynchronously.
 pub type BoxedSendObserverFuture<'s> = Box<dyn Future<Output = BoxedSendObserver> + 's>;
 
-/// Type alias for a boxed future that outputs boxed Any (non-Send)
+/// Type alias for a boxed future that outputs boxed Any (non-Send).
+///
+/// This type is used for type-erased futures that are local to a thread.
 pub type BoxedLocalFuture = Pin<Box<dyn Future<Output = Box<dyn Any>>>>;
 
-/// Type alias for a boxed observer notifier that handles Any values (non-Send)
+/// Type alias for a boxed observer notifier that handles Any values (non-Send).
+///
+/// This type provides notifications when a type-erased local task completes.
 pub type BoxedLocalObserverNotifier = Box<dyn ObserverNotified<dyn Any + 'static>>;
 
-/// Type alias for a Task that can be used with local object-safe spawning
+/// Type alias for a Task that can be used with local object-safe spawning.
+///
+/// This allows spawning type-erased !Send tasks through trait objects.
 pub type ObjSafeLocalTask = Task<BoxedLocalFuture, BoxedLocalObserverNotifier>;
 
-/// Type alias for a boxed observer that handles Any values (non-Send)
+/// Type alias for a boxed observer that handles Any values (non-Send).
+///
+/// This observer can be used to track the status and result of type-erased local tasks.
 pub type BoxedLocalObserver =
     Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>;
 
-/// Type alias for a future that returns a boxed observer for local Any values
+/// Type alias for a future that returns a boxed observer for local Any values.
+///
+/// Used for async spawning methods that return local observers asynchronously.
 pub type BoxedLocalObserverFuture<'s> = Box<dyn Future<Output = BoxedLocalObserver> + 's>;
 
-/// Type alias for a boxed future that outputs boxed Any and is 'static but not Send
+/// Type alias for a boxed future that outputs boxed Any and is 'static but not Send.
+///
+/// This type is used for type-erased futures with static lifetime but no Send requirement.
 pub type BoxedStaticFuture = Pin<Box<dyn Future<Output = Box<dyn Any + 'static>> + 'static>>;
 
-/// Type alias for a boxed observer notifier that handles 'static Any values (non-Send)
+/// Type alias for a boxed observer notifier that handles 'static Any values (non-Send).
+///
+/// This type provides notifications when a type-erased static task completes.
 pub type BoxedStaticObserverNotifier = Box<dyn ObserverNotified<dyn Any + 'static>>;
 
-/// Type alias for a Task that can be used with static object-safe spawning
+/// Type alias for a Task that can be used with static object-safe spawning.
+///
+/// This allows spawning type-erased 'static tasks without Send requirement.
 pub type ObjSafeStaticTask = Task<BoxedStaticFuture, BoxedStaticObserverNotifier>;
 
-/// Type alias for a boxed observer that handles 'static Any values (non-Send)
+/// Type alias for a boxed observer that handles 'static Any values (non-Send).
+///
+/// This observer can be used to track the status and result of type-erased static tasks.
 pub type BoxedStaticObserver =
     Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>>;
 
-/// Type alias for a future that returns a boxed observer for static Any values
+/// Type alias for a future that returns a boxed observer for static Any values.
+///
+/// Used for async spawning methods that return static observers asynchronously.
 pub type BoxedStaticObserverFuture<'s> = Box<dyn Future<Output = BoxedStaticObserver> + 's>;
 
 /*
@@ -192,13 +228,34 @@ Hash might make sense if we support eq but again, I can't imagine anyone needs i
 Debug
 I think all the rest are nonsense.
 */
-/**
-A trait targeting 'some' executor.
-
-Code targeting this trait can spawn tasks on an executor without knowing which executor it is.
-
-If possible, use the [SomeExecutorExt] trait instead.  But this trait is useful if you need an objsafe trait.
-*/
+/// A trait targeting 'some' executor.
+///
+/// Code targeting this trait can spawn tasks on an executor without knowing which executor it is.
+/// This is the core abstraction that allows writing executor-agnostic async code.
+///
+/// If possible, use the [SomeExecutorExt] trait instead for a more ergonomic API.
+/// This trait is primarily useful when you need an object-safe trait for dynamic dispatch.
+///
+/// # Example
+///
+/// ```
+/// # use some_executor::{SomeExecutor, task::Task};
+/// # use std::any::Any;
+/// # use std::pin::Pin;
+/// # use std::future::Future;
+/// # use std::convert::Infallible;
+/// # fn example(exec: &mut dyn SomeExecutor<ExecutorNotifier = Infallible>) {
+/// let future = Box::new(async { Box::new(42) as Box<dyn Any + Send> });
+/// let task = Task::new_objsafe(
+///     "example".to_string(),
+///     future,
+///     Default::default(),
+///     None
+/// );
+/// let observer = exec.spawn_objsafe(task);
+/// // Can track task completion via observer
+/// # }
+/// ```
 pub trait SomeExecutor: Send + Sync + Debug {
     /**
     # Design notes
@@ -278,11 +335,28 @@ pub trait SomeExecutor: Send + Sync + Debug {
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
 }
 
-/**
-A non-objsafe descendant of [SomeExecutor].
-
-This trait provides a more ergonomic interface, but is not object-safe.
-*/
+/// A non-objsafe descendant of [SomeExecutor].
+///
+/// This trait provides a more ergonomic interface for executors, but is not object-safe
+/// due to the Clone requirement. This is the preferred trait for most use cases where
+/// you know the executor type at compile time.
+///
+/// # Example
+///
+/// ```
+/// # use some_executor::{SomeExecutorExt, task::Task};
+/// # use std::future::Future;
+/// # use std::convert::Infallible;
+/// # fn example<E: SomeExecutorExt>(mut exec: E) {
+/// let task = Task::<_, Infallible>::without_notifications(
+///     "example".to_string(),
+///     Default::default(),
+///     async { 42 }
+/// );
+/// let observer = exec.spawn(task);
+/// // Type-safe observer for the return value
+/// # }
+/// ```
 pub trait SomeExecutorExt: SomeExecutor + Clone {}
 
 /**
@@ -498,39 +572,97 @@ pub trait SomeStaticExecutor: 'static + Debug {
     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier>;
 }
 
-/**
-A non-objsafe descendant of [SomeStaticExecutor].
-
-This trait provides a more ergonomic interface for static executors, but is not object-safe.
-*/
+/// A non-objsafe descendant of [SomeStaticExecutor].
+///
+/// This trait provides a more ergonomic interface for static executors, but is not object-safe
+/// due to the Clone requirement. Static executors handle futures with 'static lifetime
+/// but without the Send requirement.
+///
+/// # Example
+///
+/// ```
+/// # use some_executor::{StaticExecutorExt, task::Task};
+/// # use std::rc::Rc;
+/// # use std::convert::Infallible;
+/// # fn example<E: StaticExecutorExt>(mut exec: E) {
+/// // Can use 'static but !Send types
+/// let task = Task::<_, Infallible>::without_notifications(
+///     "example".to_string(),
+///     Default::default(),
+///     async { 42 }
+/// );
+/// let observer = exec.spawn_static(task);
+/// # }
+/// ```
 pub trait StaticExecutorExt: SomeStaticExecutor + Clone {}
 
-/**
-The appropriate type for a dynamically-dispatched executor.
-*/
+/// The appropriate type for a dynamically-dispatched executor.
+///
+/// This type alias provides a convenient way to work with trait objects
+/// for executors when the concrete type isn't known at compile time.
+///
+/// # Example
+///
+/// ```
+/// # use some_executor::DynExecutor;
+/// # fn example() {
+/// fn store_executor(exec: Box<DynExecutor>) {
+///     // Can store and use the executor dynamically
+/// }
+/// # }
+/// ```
 pub type DynExecutor = dyn SomeExecutor<ExecutorNotifier = Infallible>;
 
-/**
-The appropriate type for a dynamically-dispatched static executor.
-*/
+/// The appropriate type for a dynamically-dispatched static executor.
+///
+/// This type alias provides a convenient way to work with trait objects
+/// for static executors when the concrete type isn't known at compile time.
+///
+/// # Example
+///
+/// ```
+/// # use some_executor::{DynStaticExecutor, observer::ExecutorNotified};
+/// # fn example() {
+/// fn store_static_executor(exec: Box<DynStaticExecutor>) {
+///     // Can store and use the static executor dynamically
+/// }
+/// # }
+/// ```
 pub type DynStaticExecutor = dyn SomeStaticExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>;
 
-/**
-A non-objsafe descendant of [SomeLocalExecutor].
-
-This trait provides a more ergonomic interface, but is not object-safe.
-
-# Note
-
-We don't support clone on LocalExecutor.  There are a few reasons:
-1.  The typical case of thread-local executor may operate primarily on the principle of (mutable) references into stack memory.
-    Accordingly, a clone may involve some kind of stack-heap transfer (can't really do that since Futures are pinned), or effectively
-    requiring heap allocations from the start.  This is to be avoided.
-2.  Similarly, the mentioned mutable references make it impossible to have two mutable references to the same executor.
-3.  The SomeExecutor abstraction works more like a channel, where senders can be cloned.  In practice, local executors want to implement
-    that – if at all – by bolting such a channel onto their executor with some kind of adapter tool.  This allows the overhead to be
-    avoided in cases it isn't used.
-*/
+/// A non-objsafe descendant of [SomeLocalExecutor].
+///
+/// This trait provides a more ergonomic interface for local executors, but is not object-safe.
+/// Local executors run futures on the current thread and can handle !Send futures.
+///
+/// # Note
+///
+/// We don't support clone on LocalExecutor. There are a few reasons:
+/// 1. The typical case of thread-local executor may operate primarily on the principle of (mutable) references into stack memory.
+///    Accordingly, a clone may involve some kind of stack-heap transfer (can't really do that since Futures are pinned), or effectively
+///    requiring heap allocations from the start. This is to be avoided.
+/// 2. Similarly, the mentioned mutable references make it impossible to have two mutable references to the same executor.
+/// 3. The SomeExecutor abstraction works more like a channel, where senders can be cloned. In practice, local executors want to implement
+///    that – if at all – by bolting such a channel onto their executor with some kind of adapter tool. This allows the overhead to be
+///    avoided in cases it isn't used.
+///
+/// # Example
+///
+/// ```
+/// # use some_executor::{LocalExecutorExt, task::Task};
+/// # use std::rc::Rc;
+/// # use std::convert::Infallible;
+/// # fn example<'a, E: LocalExecutorExt<'a>>(mut exec: E) {
+/// // Can use !Send types like Rc
+/// let data = Rc::new(42);
+/// let task = Task::<_, Infallible>::without_notifications(
+///     "example".to_string(),
+///     Default::default(),
+///     async move { *data }
+/// );
+/// let observer = exec.spawn_local(task);
+/// # }
+/// ```
 pub trait LocalExecutorExt<'tasks>: SomeLocalExecutor<'tasks> {}
 
 impl<'future> SomeLocalExecutor<'future> for Infallible {
