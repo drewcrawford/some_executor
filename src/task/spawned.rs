@@ -24,10 +24,8 @@ use std::task::{Context, Poll};
 
 // Re-export task-local variables that are used in common_poll
 use super::task_local::{
-    IS_CANCELLED, TASK_EXECUTOR, TASK_ID, TASK_LABEL, TASK_LOCAL_EXECUTOR, TASK_PRIORITY,
-    TASK_STATIC_EXECUTOR,
+    IS_CANCELLED, TASK_EXECUTOR, TASK_ID, TASK_LABEL, TASK_PRIORITY, TASK_STATIC_EXECUTOR,
 };
-use crate::local::UnsafeErasedLocalExecutor;
 
 /// Task metadata and state to reduce parameter count in common_poll function
 pub(super) struct TaskMetadata {
@@ -426,7 +424,7 @@ where
         });
         old_priority = _old_priority;
         let _old_id = TASK_ID.with_mut(|i| {
-            let o = i.clone();
+            let o = *i;
             *i = Some(metadata.task_id);
             o
         });

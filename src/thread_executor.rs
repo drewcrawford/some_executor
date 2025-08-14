@@ -617,8 +617,8 @@ where
     });
     let o = executor.spawn_static(t);
     let name = format!("pin_static_to_thread continuation for {}", label);
-    let t = crate::Task::without_notifications(name, configuration, async move { o.await });
-    let o2 = executor.spawn_static(t).detach(); //can't hold this across await points
+    let t = crate::Task::without_notifications(name, configuration, o);
+    executor.spawn_static(t).detach(); //can't hold this across await points
 
-    async { fut.await }
+    fut
 }

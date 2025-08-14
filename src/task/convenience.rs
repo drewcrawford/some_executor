@@ -210,11 +210,10 @@ impl<F: Future, N> Task<F, N> {
         F: 'static,
         F::Output: Send,
     {
-        let f = {
+        {
             let mut executor = crate::thread_executor::thread_static_executor(|e| e.clone_box());
             crate::thread_executor::pin_static_to_thread(&mut executor, self)
-        };
-        async { f.await }
+        }
     }
 }
 
