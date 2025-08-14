@@ -1,7 +1,7 @@
 # matrix v2
 on: [push,pull_request]
 env:
-    CARGO_FATAL_WARNINGS: 'build.rustflags=["-Dwarnings"] build.rustdocflags=["-Dwarnings"] build.clippyflags["-Dwarnings"]'
+    CARGO_FATAL_WARNINGS: 'build.rustflags=["-Dwarnings"];build.rustdocflags=["-Dwarnings"];build.clippyflags["-Dwarnings"]'
 
 jobs:
   ci:
@@ -93,4 +93,3 @@ jobs:
 
       - name: tests
         run: cargo ${{ matrix.channel }} --config "$CARGO_FATAL_WARNINGS" test ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
-        
