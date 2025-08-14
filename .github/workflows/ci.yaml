@@ -1,7 +1,6 @@
 # matrix v2
 on: [push,pull_request]
 env:
-  env:
     CARGO_FATAL_WARNINGS: 'build.rustflags=["-Dwarnings"] build.rustdocflags=["-Dwarnings"] build.clippyflags["-Dwarnings"]'
 
 jobs:
