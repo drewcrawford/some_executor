@@ -580,7 +580,7 @@ Because of these downsides, consider these alternatives to this function:
 
 1.  Consider using Send/Sync types where available.
 2.  Consider using a block scope to isolate non-Send types when they don't need to be held across
-    await points.  See the example at https://rust-lang.github.io/async-book/07_workarounds/03_send_approximation.html.
+    await points.  See the example at <https://rust-lang.github.io/async-book/07_workarounds/03_send_approximation.html>.
 3.  Consider using the [SomeStaticExecutor] methods directly.  The trouble is the trait itself
     does not require the observer to be Send as not all executors will support it.  But if you know
     the concrete type and it supports this, you can use it directly.

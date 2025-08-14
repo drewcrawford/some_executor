@@ -108,7 +108,7 @@ where
 ///
 /// When polled via [`poll`](SpawnedLocalTask::poll), this task sets up the same task-local
 /// variables as [`SpawnedTask`], with the addition of:
-/// - [`TASK_LOCAL_EXECUTOR`] - Reference to the local executor
+/// - [`crate::task::TASK_LOCAL_EXECUTOR`] - Reference to the local executor
 ///
 /// # Examples
 ///
@@ -519,7 +519,7 @@ where
     /// - [`TASK_PRIORITY`] - The task's priority
     /// - [`IS_CANCELLED`] - Cancellation status
     /// - [`TASK_EXECUTOR`] - Reference to the executor (if available)
-    /// - [`TASK_LOCAL_EXECUTOR`] - Reference to the local executor (if provided)
+    /// - [`crate::task::TASK_LOCAL_EXECUTOR`] - Reference to the local executor (if provided)
     ///
     /// # Returns
     ///
@@ -623,7 +623,7 @@ where
     /// - [`TASK_ID`] - The task's unique identifier
     /// - [`TASK_PRIORITY`] - The task's priority
     /// - [`IS_CANCELLED`] - Cancellation status
-    /// - [`TASK_LOCAL_EXECUTOR`] - Reference to the provided local executor
+    /// - [`crate::task::TASK_LOCAL_EXECUTOR`] - Reference to the provided local executor
     /// - [`TASK_EXECUTOR`] - Reference to the Send executor (if provided)
     ///
     /// # Returns
