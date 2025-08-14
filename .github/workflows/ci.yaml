@@ -1,7 +1,9 @@
 # matrix v2
 on: [push,pull_request]
 env:
-    CARGO_FATAL_WARNINGS: "build.rustflags=['-Dwarnings']\nbuild.rustdocflags=['-Dwarnings']\nbuild.clippyflags=['-Dwarnings']"
+    FATAL_WARNINGS_1: "build.rustflags=['-Dwarnings']"
+    FATAL_WARNINGS_2: "build.rustdocflags=['-Dwarnings']"
+    FATAL_WARNINGS_3: "build.clippyflags=['-Dwarnings']"
 
 jobs:
   ci:
@@ -80,16 +82,16 @@ jobs:
           rustup ${{ matrix.channel }} component add rust-src
 
       - name: rustfmt
-        run: cargo ${{ matrix.channel }} --config "$CARGO_FATAL_WARNINGS" fmt --check
+        run: cargo ${{ matrix.channel }} --config "$FATAL_WARNINGS_1"  --config "$FATAL_WARNINGS_2"  --config "$FATAL_WARNINGS_3" fmt --check
 
       - name: cargo check
-        run: cargo ${{ matrix.channel }} --config "$CARGO_FATAL_WARNINGS"  check ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
+        run: cargo ${{ matrix.channel }}  --config "$FATAL_WARNINGS_1"  --config "$FATAL_WARNINGS_2"  --config "$FATAL_WARNINGS_3"  check ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
 
       - name: clippy
-        run: cargo ${{ matrix.channel }} --config "$CARGO_FATAL_WARNINGS" clippy --no-deps ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
+        run: cargo ${{ matrix.channel }} --config "$FATAL_WARNINGS_1"  --config "$FATAL_WARNINGS_2"  --config "$FATAL_WARNINGS_3" clippy --no-deps ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
 
       - name: docs
-        run: cargo ${{ matrix.channel }} --config "$CARGO_FATAL_WARNINGS" doc ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
+        run: cargo ${{ matrix.channel }}  --config "$FATAL_WARNINGS_1"  --config "$FATAL_WARNINGS_2"  --config "$FATAL_WARNINGS_3" doc ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
 
       - name: tests
-        run: cargo ${{ matrix.channel }} --config "$CARGO_FATAL_WARNINGS" test ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
+        run: cargo ${{ matrix.channel }}  --config "$FATAL_WARNINGS_1"  --config "$FATAL_WARNINGS_2"  --config "$FATAL_WARNINGS_3" test ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }}
