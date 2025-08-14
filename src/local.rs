@@ -1,118 +1,115 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use crate::SomeLocalExecutor;
-use crate::observer::{
-    ExecutorNotified, FinishedObservation, Observer, ObserverNotified, TypedObserver,
-};
+use crate::observer::{ExecutorNotified, FinishedObservation, Observer, ObserverNotified};
 use crate::task::Task;
 use std::any::Any;
-use std::convert::Infallible;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
-
-/**
-Erases the executor notifier type
-*/
-pub(crate) struct SomeLocalExecutorErasingNotifier<
-    'borrow,
-    'underlying,
-    UnderlyingExecutor: SomeLocalExecutor<'underlying> + ?Sized,
-> {
-    executor: &'borrow mut UnderlyingExecutor,
-    _phantom: PhantomData<&'underlying ()>,
-}
-
-impl<'borrow, 'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying> + ?Sized>
-    SomeLocalExecutorErasingNotifier<'borrow, 'underlying, UnderlyingExecutor>
-{
-    pub(crate) fn new(executor: &'borrow mut UnderlyingExecutor) -> Self {
-        Self {
-            executor,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<'borrow, 'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying> + ?Sized>
-    std::fmt::Debug for SomeLocalExecutorErasingNotifier<'borrow, 'underlying, UnderlyingExecutor>
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SomeLocalExecutorErasingNotifier")
-            .field("executor", &"<executor>")
-            .finish()
-    }
-}
-
-impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>>
-    SomeLocalExecutor<'executor>
-    for SomeLocalExecutorErasingNotifier<'borrow, 'executor, UnderlyingExecutor>
-{
-    type ExecutorNotifier = Box<dyn ExecutorNotified>;
-
-    fn spawn_local<F, Notifier: ObserverNotified<F::Output>>(
-        &mut self,
-        task: Task<F, Notifier>,
-    ) -> impl Observer<Value = F::Output>
-    where
-        Self: Sized,
-        F: Future + 'executor,
-        /* I am a little uncertain whether this is really required */
-        <F as Future>::Output: Unpin,
-        <F as Future>::Output: 'static,
-    {
-        self.executor.spawn_local(task)
-    }
-
-    async fn spawn_local_async<F, Notifier: ObserverNotified<F::Output>>(
-        &mut self,
-        task: Task<F, Notifier>,
-    ) -> impl Observer<Value = F::Output>
-    where
-        Self: Sized,
-        F: Future + 'executor,
-        F::Output: 'static + Unpin,
-    {
-        self.executor.spawn_local_async(task).await
-    }
-
-    fn spawn_local_objsafe(
-        &mut self,
-        task: Task<
-            Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<dyn Any + 'static>>,
-        >,
-    ) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> {
-        self.executor.spawn_local_objsafe(task)
-    }
-
-    fn spawn_local_objsafe_async<'s>(
-        &'s mut self,
-        task: Task<
-            Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<dyn Any + 'static>>,
-        >,
-    ) -> Box<
-        dyn Future<
-                Output = Box<
-                    dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>,
-                >,
-            > + 's,
-    > {
-        #[allow(clippy::async_yields_async)]
-        Box::new(async {
-            let objsafe_spawn_fut = self.executor.spawn_local_objsafe_async(task);
-            Box::into_pin(objsafe_spawn_fut).await
-        })
-    }
-
-    fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
-        self.executor
-            .executor_notifier()
-            .map(|x| Box::new(x) as Self::ExecutorNotifier)
-    }
-}
-
+//
+// /**
+// Erases the executor notifier type
+// */
+// pub(crate) struct SomeLocalExecutorErasingNotifier<
+//     'borrow,
+//     'underlying,
+//     UnderlyingExecutor: SomeLocalExecutor<'underlying> + ?Sized,
+// > {
+//     executor: &'borrow mut UnderlyingExecutor,
+//     _phantom: PhantomData<&'underlying ()>,
+// }
+//
+// impl<'borrow, 'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying> + ?Sized>
+//     SomeLocalExecutorErasingNotifier<'borrow, 'underlying, UnderlyingExecutor>
+// {
+//     pub(crate) fn new(executor: &'borrow mut UnderlyingExecutor) -> Self {
+//         Self {
+//             executor,
+//             _phantom: PhantomData,
+//         }
+//     }
+// }
+//
+// impl<'borrow, 'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying> + ?Sized>
+//     std::fmt::Debug for SomeLocalExecutorErasingNotifier<'borrow, 'underlying, UnderlyingExecutor>
+// {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         f.debug_struct("SomeLocalExecutorErasingNotifier")
+//             .field("executor", &"<executor>")
+//             .finish()
+//     }
+// }
+//
+// impl<'borrow, 'executor, UnderlyingExecutor: SomeLocalExecutor<'executor>>
+//     SomeLocalExecutor<'executor>
+//     for SomeLocalExecutorErasingNotifier<'borrow, 'executor, UnderlyingExecutor>
+// {
+//     type ExecutorNotifier = Box<dyn ExecutorNotified>;
+//
+//     fn spawn_local<F, Notifier: ObserverNotified<F::Output>>(
+//         &mut self,
+//         task: Task<F, Notifier>,
+//     ) -> impl Observer<Value = F::Output>
+//     where
+//         Self: Sized,
+//         F: Future + 'executor,
+//         /* I am a little uncertain whether this is really required */
+//         <F as Future>::Output: Unpin,
+//         <F as Future>::Output: 'static,
+//     {
+//         self.executor.spawn_local(task)
+//     }
+//
+//     async fn spawn_local_async<F, Notifier: ObserverNotified<F::Output>>(
+//         &mut self,
+//         task: Task<F, Notifier>,
+//     ) -> impl Observer<Value = F::Output>
+//     where
+//         Self: Sized,
+//         F: Future + 'executor,
+//         F::Output: 'static + Unpin,
+//     {
+//         self.executor.spawn_local_async(task).await
+//     }
+//
+//     fn spawn_local_objsafe(
+//         &mut self,
+//         task: Task<
+//             Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
+//             Box<dyn ObserverNotified<dyn Any + 'static>>,
+//         >,
+//     ) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> {
+//         self.executor.spawn_local_objsafe(task)
+//     }
+//
+//     fn spawn_local_objsafe_async<'s>(
+//         &'s mut self,
+//         task: Task<
+//             Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
+//             Box<dyn ObserverNotified<dyn Any + 'static>>,
+//         >,
+//     ) -> Box<
+//         dyn Future<
+//                 Output = Box<
+//                     dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>,
+//                 >,
+//             > + 's,
+//     > {
+//         #[allow(clippy::async_yields_async)]
+//         Box::new(async {
+//             let objsafe_spawn_fut = self.executor.spawn_local_objsafe_async(task);
+//             Box::into_pin(objsafe_spawn_fut).await
+//         })
+//     }
+//
+//     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
+//         self.executor
+//             .executor_notifier()
+//             .map(|x| Box::new(x) as Self::ExecutorNotifier)
+//     }
+// }
+//
 /**
 Like `SomeLocalExecutorErasingNotifier`, but owns the underlying executor.
 */
@@ -210,115 +207,115 @@ impl<'underlying, UnderlyingExecutor: SomeLocalExecutor<'underlying>> SomeLocalE
     }
 }
 
-pub(crate) struct UnsafeErasedLocalExecutor {
-    underlying: *mut dyn SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn ExecutorNotified>>,
-}
-
-impl std::fmt::Debug for UnsafeErasedLocalExecutor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("UnsafeErasedLocalExecutor")
-            .field("underlying", &"<executor ptr>")
-            .finish()
-    }
-}
-
-impl UnsafeErasedLocalExecutor {
-    /**
-    Creates a new type.
-
-    # Safety
-
-    The underlying executor must be valid for the lifetime of this type.
-    */
-    pub unsafe fn new<'e>(
-        underlying: &mut (dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>> + 'e),
-    ) -> Self {
-        Self {
-            underlying: unsafe { std::mem::transmute(underlying) },
-        }
-    }
-
-    fn executor(
-        &mut self,
-    ) -> &mut (dyn SomeLocalExecutor<'_, ExecutorNotifier = Box<dyn ExecutorNotified>> + '_) {
-        // Safety: `underlying` is assumed to be valid for the duration of `&mut self`
-        unsafe {
-            std::mem::transmute::<
-                &mut dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>,
-                &mut dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>,
-            >(&mut *self.underlying)
-        }
-    }
-}
-
-impl<'a> SomeLocalExecutor<'a> for UnsafeErasedLocalExecutor {
-    type ExecutorNotifier = Box<dyn ExecutorNotified>;
-
-    fn spawn_local<F, Notifier: ObserverNotified<F::Output>>(
-        &mut self,
-        _task: Task<F, Notifier>,
-    ) -> impl Observer<Value = F::Output>
-    where
-        Self: Sized,
-        F: Future + 'a,
-        /* I am a little uncertain whether this is really required */
-        <F as Future>::Output: Unpin,
-        <F as Future>::Output: 'static,
-    {
-        #[allow(unreachable_code)]
-        {
-            unimplemented!("Not implemented for erased executor; use objsafe method")
-                as TypedObserver<F::Output, Infallible>
-        }
-    }
-
-    fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(
-        &mut self,
-        _task: Task<F, Notifier>,
-    ) -> impl Future<Output = impl Observer<Value = F::Output>>
-    where
-        Self: Sized,
-        F::Output: 'static,
-    {
-        #[allow(unreachable_code)]
-        #[allow(clippy::async_yields_async)]
-        {
-            async {
-                unimplemented!("Not implemented for erased executor; use objsafe method")
-                    as TypedObserver<F::Output, Infallible>
-            }
-        }
-    }
-
-    fn spawn_local_objsafe(
-        &mut self,
-        task: Task<
-            Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<dyn Any + 'static>>,
-        >,
-    ) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> {
-        let ex = self.executor();
-        ex.spawn_local_objsafe(task)
-    }
-
-    fn spawn_local_objsafe_async<'s>(
-        &'s mut self,
-        task: Task<
-            Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
-            Box<dyn ObserverNotified<dyn Any + 'static>>,
-        >,
-    ) -> Box<
-        dyn Future<
-                Output = Box<
-                    dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>,
-                >,
-            > + 's,
-    > {
-        let ex = self.executor();
-        ex.spawn_local_objsafe_async(task)
-    }
-
-    fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
-        self.executor().executor_notifier()
-    }
-}
+// pub(crate) struct UnsafeErasedLocalExecutor {
+//     underlying: *mut dyn SomeLocalExecutor<'static, ExecutorNotifier = Box<dyn ExecutorNotified>>,
+// }
+//
+// impl std::fmt::Debug for UnsafeErasedLocalExecutor {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         f.debug_struct("UnsafeErasedLocalExecutor")
+//             .field("underlying", &"<executor ptr>")
+//             .finish()
+//     }
+// }
+//
+// impl UnsafeErasedLocalExecutor {
+//     /**
+//     Creates a new type.
+//
+//     # Safety
+//
+//     The underlying executor must be valid for the lifetime of this type.
+//     */
+//     pub unsafe fn new<'e>(
+//         underlying: &mut (dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>> + 'e),
+//     ) -> Self {
+//         Self {
+//             underlying: unsafe { std::mem::transmute(underlying) },
+//         }
+//     }
+//
+//     fn executor(
+//         &mut self,
+//     ) -> &mut (dyn SomeLocalExecutor<'_, ExecutorNotifier = Box<dyn ExecutorNotified>> + '_) {
+//         // Safety: `underlying` is assumed to be valid for the duration of `&mut self`
+//         unsafe {
+//             std::mem::transmute::<
+//                 &mut dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>,
+//                 &mut dyn SomeLocalExecutor<ExecutorNotifier = Box<dyn ExecutorNotified>>,
+//             >(&mut *self.underlying)
+//         }
+//     }
+// }
+//
+// impl<'a> SomeLocalExecutor<'a> for UnsafeErasedLocalExecutor {
+//     type ExecutorNotifier = Box<dyn ExecutorNotified>;
+//
+//     fn spawn_local<F, Notifier: ObserverNotified<F::Output>>(
+//         &mut self,
+//         _task: Task<F, Notifier>,
+//     ) -> impl Observer<Value = F::Output>
+//     where
+//         Self: Sized,
+//         F: Future + 'a,
+//         /* I am a little uncertain whether this is really required */
+//         <F as Future>::Output: Unpin,
+//         <F as Future>::Output: 'static,
+//     {
+//         #[allow(unreachable_code)]
+//         {
+//             unimplemented!("Not implemented for erased executor; use objsafe method")
+//                 as TypedObserver<F::Output, Infallible>
+//         }
+//     }
+//
+//     fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(
+//         &mut self,
+//         _task: Task<F, Notifier>,
+//     ) -> impl Future<Output = impl Observer<Value = F::Output>>
+//     where
+//         Self: Sized,
+//         F::Output: 'static,
+//     {
+//         #[allow(unreachable_code)]
+//         #[allow(clippy::async_yields_async)]
+//         {
+//             async {
+//                 unimplemented!("Not implemented for erased executor; use objsafe method")
+//                     as TypedObserver<F::Output, Infallible>
+//             }
+//         }
+//     }
+//
+//     fn spawn_local_objsafe(
+//         &mut self,
+//         task: Task<
+//             Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
+//             Box<dyn ObserverNotified<dyn Any + 'static>>,
+//         >,
+//     ) -> Box<dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>> {
+//         let ex = self.executor();
+//         ex.spawn_local_objsafe(task)
+//     }
+//
+//     fn spawn_local_objsafe_async<'s>(
+//         &'s mut self,
+//         task: Task<
+//             Pin<Box<dyn Future<Output = Box<dyn Any>>>>,
+//             Box<dyn ObserverNotified<dyn Any + 'static>>,
+//         >,
+//     ) -> Box<
+//         dyn Future<
+//                 Output = Box<
+//                     dyn Observer<Value = Box<dyn Any>, Output = FinishedObservation<Box<dyn Any>>>,
+//                 >,
+//             > + 's,
+//     > {
+//         let ex = self.executor();
+//         ex.spawn_local_objsafe_async(task)
+//     }
+//
+//     fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
+//         self.executor().executor_notifier()
+//     }
+// }

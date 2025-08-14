@@ -374,7 +374,7 @@ impl<F: Future, ONotifier, Executor> SpawnedStaticTask<F, ONotifier, Executor> {
 pub(super) fn common_poll<'l, F, N, L, S>(
     future: Pin<&mut F>,
     state: TaskState<'_, F::Output, N>,
-    local_executor: Option<&mut L>,
+    _local_executor: Option<&mut L>,
     static_executor: Option<&mut S>,
     metadata: TaskMetadata,
     cx: &mut Context,
@@ -385,7 +385,6 @@ where
     L: SomeLocalExecutor<'l>,
     S: SomeStaticExecutor,
 {
-    let hold_original_label_for_debug = state.label.clone();
     assert!(
         metadata.poll_after <= crate::sys::Instant::now(),
         "Conforming executors should not poll tasks before the poll_after time."
@@ -401,7 +400,6 @@ where
     let old_id;
     let old_executor;
     let old_static_executor;
-    // let mut swap_local_executor;
     unsafe {
         let _old_label = TASK_LABEL.with_mut(|l| {
             let o = l.clone();
@@ -466,7 +464,7 @@ where
     //after poll, we need to set our properties
     unsafe {
         TASK_LABEL.with_mut(|l| {
-            *state.label = old_label;
+            *l = old_label;
         });
         IS_CANCELLED.with_mut(|c| {
             *c = old_cancel;

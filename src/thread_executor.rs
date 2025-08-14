@@ -594,12 +594,12 @@ erased or does not support Send.
 
 
 */
-pub fn pin_static_to_thread<E: SomeStaticExecutor, R, F: Future<Output = R>, N>(
+pub fn pin_static_to_thread<E: SomeStaticExecutor, R, F, N>(
     executor: &mut E,
     task: crate::Task<F, N>,
 ) -> impl Future<Output = R> + Send + use<E, R, F, N>
 where
-    F: 'static,
+    F: Future<Output = R> + 'static,
     R: 'static + Send,
 {
     use crate::observer::Observer;
