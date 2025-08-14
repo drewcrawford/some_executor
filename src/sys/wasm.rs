@@ -23,9 +23,9 @@ use wasm_bindgen::closure::Closure;
 pub use wasm_thread as thread;
 
 thread_local! {
-    static RUNNING_TASKS: Cell<usize> = Cell::new(0);
-    static INSTALLED_CLOSE_HANDLER: Cell<Option<Function>> = Cell::new(None);
-    static CLOSE_IS_CALLED: Cell<bool> = Cell::new(false);
+    static RUNNING_TASKS: Cell<usize> = const { Cell::new(0) };
+    static INSTALLED_CLOSE_HANDLER: Cell<Option<Function>> = const { Cell::new(None) };
+    static CLOSE_IS_CALLED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// WASM-specific newtype that wraps SpawnedStaticTask to implement Future
@@ -67,9 +67,9 @@ where
 
         // Delegate to the SpawnedStaticTask's poll method
         // Following the same pattern as in stdlib implementation
-        let r = self.spawned.as_mut().poll::<Infallible>(cx, None, None);
+
         // web_sys::console::log_1(&"WasmStaticTask::poll done".into());
-        r
+        self.spawned.as_mut().poll::<Infallible>(cx, None, None)
     }
 }
 
@@ -100,59 +100,6 @@ where
         "Local task spawning without a proper executor is no longer supported. Please configure a local executor before spawning local tasks."
     );
 }
-
-/**
-Patches the worker close function.
-
-# Here be dragons!
-
-Let me explain WTF is going on here.  When we execute futures with [wasm_bindgen_futures::spawn_local],
-they need to be run by the event loop. Which means the event loop needs to um, actually run.
-
-You may have some ideas about that like setTimeout, or requestAnimationFrame, but actually what happens
-is when your thread is done, wasm_thread will call `close` on the worker, which will
-cause the worker to exit immediately, without running any pending tasks and with no log or indication
-of what happened.  Then you sit around wondering why your tasks are not running and trace them
-through 20 layers of dependencies.
-
-How do I know?  This is the kind of bug that I spent 3 days trying to figure out two years ago,
-promptly forgot about, and then spent another 3 days trying to figure out again.
-
-## The solution
-
-We patch the `close` function on the global object to do two things:
-1. Set a flag that close was called, so we can check it later.
-2. Check if there are any running tasks. If there are, we do nothing and let the event loop run.
-   If there are no running tasks, we call the original `close` function to actually close the worker.
-
-This way, we ensure that the worker does not exit prematurely and all tasks are executed before the worker is closed.
-
-Later when the last task is done, we call the original `close` function to actually close the worker.
-
-## Alternatives considered
-
-The usual hack is to use [wasm_bindgen::throw_str] to reject the close call, but that
-is not a great idea as it shows up in console and prevents worker cleanup.
-See https://github.com/rustwasm/wasm-bindgen/issues/2945 and
-https://github.com/chemicstry/wasm_thread/issues/6.
-
-I sent a PR to wasm_bindgen to document spawn_local's behavior to at least warn people,
-but it was not merged.  See https://github.com/rustwasm/wasm-bindgen/pull/4391.
-
-wasm_thread has some intention to "support async thread entrypoints"
-which "would probably need a major rewrite", see https://github.com/chemicstry/wasm_thread/issues/10.
-
-I am not optimistic about that because it's been several years with no real progress on that front.
-
-There are two stale PRs in a related area that seem to mostly be stuck because any year now
-we'll rewrite wasm_thread to support async thread entrypoints:
-
-* https://github.com/chemicstry/wasm_thread/issues/10
-* https://github.com/chemicstry/wasm_thread/pull/18
-
-At this point I've lost enough time on this bug to actually consider implementing it myself,
-but I'm not sure they have the review bandwidth to look at it, and this is simpler.
-*/
 
 fn patch_if_needed() {
     INSTALLED_CLOSE_HANDLER.with(|installed| {
