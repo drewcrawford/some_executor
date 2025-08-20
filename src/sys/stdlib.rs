@@ -58,6 +58,8 @@ const STATIC_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
         let waker = unsafe { Arc::from_raw(data as *const StaticWaker) };
         let old = waker.shared.inline_notify.swap(WAKEPLS, Ordering::Relaxed);
         if old == SLEEPING {
+            // Acquire mutex before notify to ensure proper synchronization
+            let _guard = waker.shared.mutex.lock().expect("Mutex poisoned");
             waker.shared.condvar.notify_one();
         }
         drop(waker);
@@ -67,6 +69,8 @@ const STATIC_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
         let waker = unsafe { Arc::from_raw(data as *const StaticWaker) };
         let old = waker.shared.inline_notify.swap(WAKEPLS, Ordering::Relaxed);
         if old == SLEEPING {
+            // Acquire mutex before notify to ensure proper synchronization
+            let _guard = waker.shared.mutex.lock().expect("Mutex poisoned");
             waker.shared.condvar.notify_one();
         }
         std::mem::forget(waker);
