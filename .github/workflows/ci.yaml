@@ -17,7 +17,7 @@ jobs:
         channel: [""]
         features: [""]
         target: [""]
-        cwd: [".","test_executors_proc"]
+        cwd: ["."]
         os: [ubuntu-latest]
 
         include:
@@ -25,10 +25,6 @@ jobs:
             channel: "+nightly"
             target: "wasm32-unknown-unknown"
             cwd: "."
-          - os: ubuntu-latest
-            channel: "+nightly"
-            target: "wasm32-unknown-unknown"
-            cwd: "test_executors_proc"
 
     steps:
       - uses: actions/checkout@v4
