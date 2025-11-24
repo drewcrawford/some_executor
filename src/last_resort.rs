@@ -87,15 +87,26 @@ impl Waker {
 
 impl LastResortExecutor {
     fn spawn<F: Future + Send + 'static>(f: F) {
+        const MESSAGE: &str = "some_executor::LastResortExecutor is in use.  This is not intended for production code; investigate ways to use a production-quality executor. Set SOME_EXECUTOR_BUILTIN_SHOULD_PANIC=1 to panic instead.";
+
+        let should_panic = std::env::var("SOME_EXECUTOR_BUILTIN_SHOULD_PANIC")
+            .map(|v| {
+                let v = v.to_lowercase();
+                v == "1" || v == "true" || v == "yes"
+            })
+            .unwrap_or(false);
+
+        if should_panic {
+            panic!("{}", MESSAGE);
+        }
+
         #[cfg(not(target_arch = "wasm32"))]
         {
-            eprintln!(
-                "some_executor::LastResortExecutor is in use.  This is not intended for production code; investigate ways to use a production-quality executor."
-            );
+            eprintln!("{}", MESSAGE);
         }
         #[cfg(target_arch = "wasm32")]
         {
-            web_sys::console::log_1(&"some_executor::LastResortExecutor is in use.  This is not intended for production code; investigate ways to use a production-quality executor.".into());
+            web_sys::console::log_1(&MESSAGE.into());
         }
 
         thread::Builder::new()

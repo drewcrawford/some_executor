@@ -148,15 +148,26 @@ impl StaticLastResortExecutor {
 /// In production builds, consider configuring a proper executor to avoid these warnings
 /// and achieve better performance.
 fn print_warning() {
+    const MESSAGE: &str = "some_executor::StaticLastResortExecutor is in use. This is not intended for production code; investigate ways to use a production-quality executor. Set SOME_EXECUTOR_BUILTIN_SHOULD_PANIC=1 to panic instead.";
+
+    let should_panic = std::env::var("SOME_EXECUTOR_BUILTIN_SHOULD_PANIC")
+        .map(|v| {
+            let v = v.to_lowercase();
+            v == "1" || v == "true" || v == "yes"
+        })
+        .unwrap_or(false);
+
+    if should_panic {
+        panic!("{}", MESSAGE);
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     {
-        eprintln!(
-            "some_executor::StaticLastResortExecutor is in use. This is not intended for production code; investigate ways to use a production-quality executor."
-        );
+        eprintln!("{}", MESSAGE);
     }
     #[cfg(target_arch = "wasm32")]
     {
-        web_sys::console::log_1(&"some_executor::StaticLastResortExecutor is in use. This is not intended for production code; investigate ways to use a production-quality executor.".into());
+        web_sys::console::log_1(&MESSAGE.into());
     }
 }
 
