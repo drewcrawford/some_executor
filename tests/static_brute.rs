@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 const NUM_ITERATIONS: usize = 8000;
 
 use some_executor::task::{Configuration, Task};
