@@ -23,7 +23,7 @@ and execute them, and plug into the ecosystem.  Moreover, advanced features like
 implemented for you, so you get them for free and can focus on the core logic of your executor.
 
 **If you want to write async code**, this crate provides a **standard, robust featureset** that (in my opinion) is
- table-stakes for writing async rust in 2024. This includes cancellation, task locals, priorities, and much more.
+ table-stakes for writing async rust in 2024. This includes cancellation, task locals, priorities, execution hints, and much more.
 These features are portable and dependable across any executor.
 
 Here are deeper dives on each topic.
@@ -43,8 +43,8 @@ Spawning a task is as simple as calling `spawn` on any of the executor types.  T
 
 ## Reference executors:
 
-* `test_executors`(https://sealedabstract.com/code/test_executors) provides a set of toy executors good enough for unit tests.
-* `some_local_executor`(https://sealedabstract.com/code/some_local_executor) provides a local executor that runs its task on the current thread, and can also receive tasks from other threads.
+* [test_executors](https://sealedabstract.com/code/test_executors) provides a set of toy executors good enough for unit tests.
+* [some_local_executor](https://sealedabstract.com/code/some_local_executor) provides a local executor that runs its task on the current thread, and can also receive tasks from other threads.
 * A reference thread-per-core executor is planned.
 
 # For those implementing executors
@@ -53,6 +53,7 @@ Here are your APIs:
 1.  Implement the `SomeExecutorExt` trait.  This supports a wide variety of callers and patterns.
 2.  Alternatively, or in addition, if your executor is local to a thread, implement the `LocalExecutorExt` trait.  This type can spawn futures that are `!Send`.
 3.  Optionally, respond to notifications by implementing the `ExecutorNotified` trait.  This is optional, but can provide some efficiency.
+4.  For static executors (non-Send), use the `static_support` module to erase notifier types and create unified interfaces via `OwnedSomeStaticExecutorErasingNotifier`.
 
 The main gotcha of this API is that you must wait to poll tasks until after `Task::poll_after`.  You can
 accomplish this any way you like, such as suspending the task, sleeping, etc.  For more details, see the documentation.
@@ -63,10 +64,11 @@ Mostly, write the code you want to write.  But here are some benefits you can ge
 
 1.  If you need to spawn `Task`s from your async code, see above.
 2.  The crate adds the `task_local` macro, which is comparable to `thread_local` or tokio's version.  It provides a way to store data that is local to the task.
-3.  The provides various particular task locals, such as `task::TASK_ID` and `task::TASK_LABEL`, which are useful for debugging and logging information about the current task.
+3.  The crate provides various particular task locals, such as `task::TASK_ID` and `task::TASK_LABEL`, which are useful for debugging and logging information about the current task.
 4.  The crate propagates some locals, such as `task::TASK_PRIORITY`, which can be used to provide useful downstream information about how the task is executing.
 5.  The crate provides the `task::IS_CANCELLED` local, which can be used to check if the task has been cancelled.  This allows you to return early and avoid unnecessary work.
-6.  In the future, support for task groups and parent-child cancellation may be added.
+6.  The crate provides `hint::Hint` to communicate expected task behavior (I/O-bound vs CPU-bound) to executors, enabling better scheduling decisions.
+7.  In the future, support for task groups and parent-child cancellation may be added.
 
 # Alternative to `executor-trait`
 
