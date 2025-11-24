@@ -82,7 +82,7 @@ where
 {
     fn drop(&mut self) {
         RUNNING_TASKS.with(|running| {
-            running.update(|count| count - 1);
+            running.set(running.get() - 1);
         });
         consider_closing();
     }
@@ -177,7 +177,7 @@ where
     let wasm_future = WasmStaticTaskFuture::new(spawned);
 
     RUNNING_TASKS.with(|running| {
-        running.update(|count| count + 1);
+        running.set(running.get() + 1);
     });
     // Use wasm-bindgen-futures::spawn_local to execute the future
     wasm_bindgen_futures::spawn_local(wasm_future);
