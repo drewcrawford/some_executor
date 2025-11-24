@@ -9,7 +9,7 @@ homepage = "https://sealedabstract.com/code/some_executor"
 repository = "https://github.com/drewcrawford/some_executor"
 license = "MIT OR Apache-2.0"
 keywords = ["async","rumtime","agnostic","trait"]
-categories = ["asynchronous","concurrency","wasm","web-programming"]
+categories = ["asynchronous","concurrency","wasm","rust-patterns"]
 exclude = [".*","art"]
 
 [dependencies]
