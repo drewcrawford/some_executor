@@ -326,7 +326,7 @@ impl SomeStaticExecutor for StaticLastResortExecutor {
 
 impl StaticExecutorExt for StaticLastResortExecutor {}
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::observer::{FinishedObservation, Observer};
@@ -492,8 +492,8 @@ mod tests {
         });
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn test_spawn_static_objsafe() {
         let (s, r) = std::sync::mpsc::channel();
         let counter = Arc::new(AtomicU32::new(0));
@@ -551,15 +551,15 @@ mod tests {
         });
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn test_executor_notifier() {
         let mut executor = StaticLastResortExecutor::new();
         assert!(executor.executor_notifier().is_none());
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn test_delayed_waking() {
         let (s, r) = std::sync::mpsc::channel();
         let delayed_future = DelayedFuture::new(3, 99);
