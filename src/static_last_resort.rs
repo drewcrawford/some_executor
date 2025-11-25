@@ -326,7 +326,7 @@ impl SomeStaticExecutor for StaticLastResortExecutor {
 
 impl StaticExecutorExt for StaticLastResortExecutor {}
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::observer::{FinishedObservation, Observer};

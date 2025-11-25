@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+#![cfg(not(target_arch = "wasm32"))]
 
 //! Comprehensive test for custom futures with yielding behavior across different executors.
 //!

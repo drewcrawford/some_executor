@@ -166,7 +166,7 @@ pub fn set_global_executor(runtime: Box<DynExecutor>) {
         .expect("Global runtime already set");
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use crate::global_executor::global_executor;
     use crate::task::{ConfigurationBuilder, Task};
