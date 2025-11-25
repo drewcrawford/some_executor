@@ -544,7 +544,7 @@ Don't want to implement eq, etc. at this time –use task ID.
 AsRef / sure, why not
  */
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use crate::observer::{FinishedObservation, Observer, ObserverNotified};
     use crate::task::{DynLocalSpawnedTask, DynSpawnedTask, SpawnedTask, Task};
