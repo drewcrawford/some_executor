@@ -1,113 +1,192 @@
+#!/usr/bin/env node
+//
+// capture-logs.js - Capture Chrome DevTools Protocol logs from WASM tests
+//
+
 const CDP = require('chrome-remote-interface');
 
-async function setupLogging(client, label) {
-  const {Log, Runtime, Network, Page} = client;
+const PORT = 9222;
+const VERBOSE = process.argv.includes('--verbose');
 
-  await Log.enable();
-  await Runtime.enable();
+function log(msg) {
+  console.log(`WASM:CDP: ${msg}`);
+}
 
-  // Try to enable Network and Page (may not be available on all targets)
-  try { await Network.enable(); } catch (e) { /* ignore */ }
-  try { await Page.enable(); } catch (e) { /* ignore */ }
+function logVerbose(msg) {
+  if (VERBOSE) {
+    console.log(`WASM:CDP: ${msg}`);
+  }
+}
 
-  Log.entryAdded((params) => {
-    const {entry} = params;
-    console.log(`[${label}:LOG:${entry.level}] ${entry.text}`);
-  });
+function outputLog(type, level, text) {
+  console.log(`WASM:${type}:${level}: ${text}`);
+}
 
+async function replayBufferedMessages(Runtime) {
+  try {
+    const {result} = await Runtime.evaluate({
+      expression: `JSON.stringify(window.__cdp_console_buffer__ || [])`,
+      returnByValue: true
+    });
+    if (result.value) {
+      const buffered = JSON.parse(result.value);
+      if (buffered.length > 0) {
+        log(`Replaying ${buffered.length} buffered message(s)`);
+        for (const msg of buffered) {
+          outputLog('CONSOLE', msg.type.toUpperCase(), msg.args.join(' '));
+        }
+        // Clear buffer
+        await Runtime.evaluate({ expression: `window.__cdp_console_buffer__ = [];` });
+      }
+    }
+  } catch (e) {
+    // Ignore - page might not have the buffer
+  }
+}
+
+async function setupRuntimeLogging(Runtime, label) {
   Runtime.consoleAPICalled((params) => {
     const args = params.args.map(arg => arg.value || arg.description || '').join(' ');
-    console.log(`[${label}:CONSOLE:${params.type}] ${args}`);
+    outputLog('CONSOLE', params.type.toUpperCase(), args);
   });
 
-  // Catch exceptions
-  Runtime.exceptionThrown((params) => {
-    const details = params.exceptionDetails;
-    const text = details.exception?.description || details.text || JSON.stringify(details);
-    console.log(`[${label}:EXCEPTION] ${text}`);
+  Runtime.exceptionThrown(({exceptionDetails}) => {
+    const text = exceptionDetails.exception?.description
+      || exceptionDetails.text
+      || JSON.stringify(exceptionDetails);
+    outputLog('EXCEPTION', 'ERROR', text);
   });
+}
 
-  // Network failures
-  Network.requestFailed && Network.requestFailed((params) => {
-    console.log(`[${label}:NET:FAILED] ${params.request?.url} - ${params.errorText}`);
-  });
+async function attachToTarget(Target, targetId, targetType) {
+  try {
+    const client = await CDP({port: PORT, target: targetId});
+    const {Runtime, Log, Network} = client;
 
-  // Network responses (for 4xx/5xx)
-  Network.responseReceived && Network.responseReceived((params) => {
-    const {response} = params;
-    if (response.status >= 400) {
-      console.log(`[${label}:NET:${response.status}] ${response.url}`);
-    }
-  });
+    // Enable and set up listeners immediately
+    await Runtime.enable();
+    setupRuntimeLogging(Runtime, targetType);
 
-  // Page crashes
-  Page.javascriptDialogOpening && Page.javascriptDialogOpening((params) => {
-    console.log(`[${label}:DIALOG] ${params.type}: ${params.message}`);
-  });
+    // Replay any buffered messages
+    await replayBufferedMessages(Runtime);
 
-  console.error(`CDP: Logging enabled for ${label}`);
+    // Optional extras
+    try {
+      await Log.enable();
+      Log.entryAdded(({entry}) => {
+        if (entry.level === 'verbose' && !VERBOSE) return;
+        outputLog('LOG', entry.level.toUpperCase(), entry.text);
+      });
+    } catch (e) {}
+
+    try {
+      await Network.enable();
+      Network.responseReceived && Network.responseReceived(({response}) => {
+        if (response.status >= 400 && !response.url.includes('favicon')) {
+          outputLog('NET', String(response.status), response.url);
+        }
+      });
+    } catch (e) {}
+
+    logVerbose(`Attached to ${targetType}`);
+  } catch (err) {
+    logVerbose(`Failed to attach to ${targetId}: ${err.message}`);
+  }
 }
 
 async function captureLogs() {
-  // Retry connection forever - CI timeout will protect us
   let browser;
   let attempt = 0;
+
+  // Retry connection forever
   while (!browser) {
     try {
-      browser = await CDP({port: 9222});
+      browser = await CDP({port: PORT});
     } catch (err) {
       attempt++;
-      if (attempt % 10 === 0) {
-        console.error(`CDP: Waiting for Chrome (attempt ${attempt})...`);
+      if (attempt % 30 === 0) {
+        log(`Waiting for Chrome on port ${PORT} (attempt ${attempt})...`);
       }
       await new Promise(r => setTimeout(r, 1000));
     }
   }
 
-  // Set up logging on browser-level connection too
-  await setupLogging(browser, 'browser');
+  log('Connected');
 
-  const {Target} = browser;
+  const {Target, Page, Runtime} = browser;
 
-  // Discover all targets
+  // Set up target discovery FIRST - this is the critical path
   await Target.setDiscoverTargets({discover: true});
 
-  // Attach to each page target we find
-  const attachToPage = async (targetId, targetType) => {
-    try {
-      // Create a new CDP session for this target
-      const {sessionId} = await Target.attachToTarget({targetId, flatten: true});
-      console.error(`CDP: Attached to ${targetType} ${targetId} (session: ${sessionId})`);
-
-      // Connect to this specific target
-      const client = await CDP({port: 9222, target: targetId});
-      await setupLogging(client, targetType);
-    } catch (err) {
-      console.error(`CDP: Failed to attach to ${targetId}: ${err.message}`);
-    }
+  const attachedTargets = new Set();
+  const attachIfNeeded = async (targetId, targetType) => {
+    if (attachedTargets.has(targetId)) return;
+    attachedTargets.add(targetId);
+    await attachToTarget(Target, targetId, targetType);
   };
 
   // Listen for new targets
   Target.targetCreated(async ({targetInfo}) => {
-    console.error(`CDP: New target: ${targetInfo.type} - ${targetInfo.url || targetInfo.targetId}`);
-    if (targetInfo.type === 'page' || targetInfo.type === 'worker' || targetInfo.type === 'iframe') {
-      await attachToPage(targetInfo.targetId, targetInfo.type);
+    const {type, targetId} = targetInfo;
+    if (type === 'page' || type === 'worker' || type === 'iframe') {
+      await attachIfNeeded(targetId, type);
     }
   });
 
-  // Attach to existing targets
+  // Attach to existing targets immediately
   const {targetInfos} = await Target.getTargets();
-  for (const info of targetInfos) {
-    console.error(`CDP: Existing target: ${info.type} - ${info.url || info.targetId}`);
-    if (info.type === 'page' || info.type === 'worker' || info.type === 'iframe') {
-      await attachToPage(info.targetId, info.type);
-    }
+  const pageTargets = targetInfos.filter(t =>
+    t.type === 'page' || t.type === 'worker' || t.type === 'iframe'
+  );
+
+  // Attach in parallel for speed
+  await Promise.all(pageTargets.map(t => attachIfNeeded(t.targetId, t.type)));
+
+  // Install early interceptor for future pages
+  try {
+    await Page.enable();
+    await Page.addScriptToEvaluateOnNewDocument({
+      source: `
+        if (!window.__cdp_console_injected__) {
+          window.__cdp_console_buffer__ = [];
+          window.__cdp_console_injected__ = true;
+          ['log', 'warn', 'error', 'info', 'debug'].forEach(m => {
+            const orig = console[m].bind(console);
+            console[m] = function(...args) {
+              window.__cdp_console_buffer__.push({
+                type: m,
+                args: args.map(a => { try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch(e) { return String(a); } })
+              });
+              return orig(...args);
+            };
+          });
+        }
+      `
+    });
+  } catch (e) {
+    logVerbose(`Early interceptor failed: ${e.message}`);
   }
 
-  console.error('CDP: Setup complete, listening for all targets...');
+  // Also set up browser-level runtime (sometimes catches things)
+  try {
+    await Runtime.enable();
+    setupRuntimeLogging(Runtime, 'browser');
+  } catch (e) {}
+
+  log('Listening');
+
+  // Periodically check for buffered messages on known targets
+  setInterval(async () => {
+    for (const targetId of attachedTargets) {
+      try {
+        const client = await CDP({port: PORT, target: targetId});
+        await replayBufferedMessages(client.Runtime);
+      } catch (e) {}
+    }
+  }, 2000);
 }
 
 captureLogs().catch(err => {
-  console.error('CDP: Fatal error:', err);
+  console.error(`WASM:CDP:ERROR: ${err.message}`);
   process.exit(1);
 });

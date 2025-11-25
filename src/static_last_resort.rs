@@ -486,9 +486,6 @@ mod tests {
         let result = done_rx.await;
         log!("TEST: Got result: {}", result);
         assert_eq!(result, 42);
-        for i in 0..1_000000000 {
-            std::hint::black_box(i);
-        }
     }
 
     // === END ISOLATION TESTS ===
