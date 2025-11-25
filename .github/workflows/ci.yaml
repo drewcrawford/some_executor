@@ -101,7 +101,7 @@ jobs:
 
       # move this up temporarily to accelerate
       - name: test (logs)
-        run: scripts/wasm-test-with-logs.sh
+        run: scripts/wasm-test-with-logs.sh 2>&1
 
       - name: test
         run: cd ${{ matrix.cwd }} && ${{ matrix.additional_test_prefix}} RUSTDOCFLAGS="-D warnings" CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER='wasm-bindgen-test-runner' cargo ${{ matrix.channel }}  test ${{ steps.args.outputs.features }} ${{ steps.args.outputs.target }} --lib -- --nocapture
