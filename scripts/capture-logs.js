@@ -81,9 +81,55 @@ async function attachToTarget(Target, targetId, targetType) {
 
     try {
       await Network.enable();
-      Network.responseReceived && Network.responseReceived(({response}) => {
-        if (response.status >= 400 && !response.url.includes('favicon')) {
-          outputLog('NET', String(response.status), response.url);
+
+      const pendingRequests = new Map();
+
+      // Track requests
+      Network.requestWillBeSent && Network.requestWillBeSent(({requestId, request, type}) => {
+        const {url} = request;
+        if (url.includes('favicon') || url.startsWith('data:')) return;
+        if (url.endsWith('.js') || url.endsWith('.wasm') || type === 'Script') {
+          pendingRequests.set(requestId, {url, type});
+        }
+      });
+
+      // When response received, note the mime type
+      Network.responseReceived && Network.responseReceived(({requestId, response}) => {
+        const pending = pendingRequests.get(requestId);
+        if (pending) {
+          pending.mimeType = response.mimeType;
+          pending.status = response.status;
+        }
+      });
+
+      // When loading finishes, fetch and log the body
+      Network.loadingFinished && Network.loadingFinished(async ({requestId}) => {
+        const pending = pendingRequests.get(requestId);
+        if (!pending) return;
+        pendingRequests.delete(requestId);
+
+        // Skip binary WASM files - just note they were loaded
+        if (pending.url.endsWith('.wasm') || pending.mimeType === 'application/wasm') {
+          outputLog('RESOURCE', 'LOADED', `${pending.url} (binary wasm, not dumped)`);
+          return;
+        }
+
+        try {
+          const {body, base64Encoded} = await Network.getResponseBody({requestId});
+          const content = base64Encoded ? Buffer.from(body, 'base64').toString('utf8') : body;
+
+          outputLog('RESOURCE', 'START', `=== ${pending.url} (${pending.mimeType}) ===`);
+          // Print content, limit to 100000 chars for JS files
+          const lines = content.substring(0, 100000).split('\n');
+          for (const line of lines) {
+            console.log(`WASM:RESOURCE:CONTENT: ${line}`);
+          }
+          if (content.length > 100000) {
+            console.log(`WASM:RESOURCE:CONTENT: ... truncated (${content.length} total chars)`);
+          }
+          outputLog('RESOURCE', 'END', `=== ${pending.url} ===`);
+        } catch (e) {
+          logVerbose(`Could not get body for ${pending.url}: ${e.message}`);
         }
       });
     } catch (e) {}
