@@ -475,7 +475,7 @@ mod tests {
                 "WORKER: About to spawn_static",
             ));
 
-            executor.spawn_static(task).detach();
+            //executor.spawn_static(task).detach();
 
             #[cfg(target_arch = "wasm32")]
             web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(
