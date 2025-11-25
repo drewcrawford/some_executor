@@ -419,31 +419,46 @@ mod tests {
     /// Test 4: Does executor work inside a spawned thread?
     #[test_executors::async_test]
     async fn isolation_test_executor_in_thread() {
-        // Set up panic hook on wasm to capture any panics
-        #[cfg(target_arch = "wasm32")]
-        console_error_panic_hook::set_once();
-
+        // Use continuation channels for logging since console.log may not work
+        let (log1_tx, log1_rx) = r#continue::continuation::<&'static str>();
+        let (log2_tx, log2_rx) = r#continue::continuation::<&'static str>();
+        let (log3_tx, log3_rx) = r#continue::continuation::<&'static str>();
+        let (log4_tx, log4_rx) = r#continue::continuation::<&'static str>();
         let (done_tx, done_rx) = r#continue::continuation::<u32>();
 
         crate::sys::thread::spawn(move || {
-            // Also set panic hook in worker thread
-            #[cfg(target_arch = "wasm32")]
-            console_error_panic_hook::set_once();
+            log1_tx.send("WORKER: Thread started");
 
             let mut executor = StaticLastResortExecutor::new();
+            log2_tx.send("WORKER: Executor created");
 
             let task = Task::without_notifications(
                 "simple-task".to_string(),
                 Configuration::default(),
                 async move {
+                    log4_tx.send("TASK: Inside async task");
                     done_tx.send(42);
                 },
             );
 
+            log3_tx.send("WORKER: About to spawn_static");
             executor.spawn_static(task).detach();
+            // Note: we can't log after this because we're out of channels
+            // and the closure may exit before more channels could be sent
         });
 
+        // Collect logs as they arrive
+        eprintln!("Waiting for log1...");
+        eprintln!("LOG: {}", log1_rx.await);
+        eprintln!("Waiting for log2...");
+        eprintln!("LOG: {}", log2_rx.await);
+        eprintln!("Waiting for log3...");
+        eprintln!("LOG: {}", log3_rx.await);
+        eprintln!("Waiting for log4...");
+        eprintln!("LOG: {}", log4_rx.await);
+        eprintln!("Waiting for result...");
         let result = done_rx.await;
+        eprintln!("Got result: {}", result);
         assert_eq!(result, 42);
     }
 
