@@ -350,8 +350,6 @@ mod tests {
     }
 
     /// Test 1: Does thread::spawn work at all? (async, no blocking)
-    /// PASSED on wasm32 - disabled to isolate test 4
-    #[cfg(not(target_arch = "wasm32"))]
     #[test_executors::async_test]
     async fn isolation_test_thread_spawn() {
         use std::sync::atomic::AtomicBool;
