@@ -342,6 +342,13 @@ mod tests {
 
     // === ISOLATION TESTS FOR DEBUGGING ===
 
+    /// Test 0: Does anything work at all?
+    #[test_executors::async_test]
+    async fn isolation_test_sanity() {
+        // This should pass immediately with no dependencies
+        assert_eq!(1 + 1, 2);
+    }
+
     /// Test 1: Does thread::spawn work at all? (async, no blocking)
     /// PASSED on wasm32 - disabled to isolate test 4
     #[cfg(not(target_arch = "wasm32"))]
@@ -421,46 +428,64 @@ mod tests {
     /// Test 4: Does executor work inside a spawned thread?
     #[test_executors::async_test]
     async fn isolation_test_executor_in_thread() {
-        // Use continuation channels for logging since console.log may not work
-        let (log1_tx, log1_rx) = r#continue::continuation::<&'static str>();
-        let (log2_tx, log2_rx) = r#continue::continuation::<&'static str>();
-        let (log3_tx, log3_rx) = r#continue::continuation::<&'static str>();
-        let (log4_tx, log4_rx) = r#continue::continuation::<&'static str>();
+        #[cfg(target_arch = "wasm32")]
+        use wasm_bindgen::JsValue;
+
+        #[cfg(target_arch = "wasm32")]
+        macro_rules! log {
+            ($($arg:tt)*) => {
+                web_sys::console::log_1(&JsValue::from_str(&format!($($arg)*)));
+            };
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        macro_rules! log {
+            ($($arg:tt)*) => {
+                eprintln!($($arg)*);
+            };
+        }
+
+        log!("TEST: Starting isolation_test_executor_in_thread");
+
         let (done_tx, done_rx) = r#continue::continuation::<u32>();
 
+        log!("TEST: About to spawn thread");
+
         crate::sys::thread::spawn(move || {
-            log1_tx.send("WORKER: Thread started");
+            // Note: logging from worker may not work, but we try anyway
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str("WORKER: Thread started"));
 
             let mut executor = StaticLastResortExecutor::new();
-            log2_tx.send("WORKER: Executor created");
+
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str("WORKER: Executor created"));
 
             let task = Task::without_notifications(
                 "simple-task".to_string(),
                 Configuration::default(),
                 async move {
-                    log4_tx.send("TASK: Inside async task");
+                    #[cfg(target_arch = "wasm32")]
+                    web_sys::console::log_1(&wasm_bindgen::JsValue::from_str("TASK: Inside async"));
                     done_tx.send(42);
                 },
             );
 
-            log3_tx.send("WORKER: About to spawn_static");
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(
+                "WORKER: About to spawn_static",
+            ));
+
             executor.spawn_static(task).detach();
-            // Note: we can't log after this because we're out of channels
-            // and the closure may exit before more channels could be sent
+
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(
+                "WORKER: spawn_static done",
+            ));
         });
 
-        // Collect logs as they arrive
-        eprintln!("Waiting for log1...");
-        eprintln!("LOG: {}", log1_rx.await);
-        eprintln!("Waiting for log2...");
-        eprintln!("LOG: {}", log2_rx.await);
-        eprintln!("Waiting for log3...");
-        eprintln!("LOG: {}", log3_rx.await);
-        eprintln!("Waiting for log4...");
-        eprintln!("LOG: {}", log4_rx.await);
-        eprintln!("Waiting for result...");
+        log!("TEST: Thread spawned, awaiting result");
         let result = done_rx.await;
-        eprintln!("Got result: {}", result);
+        log!("TEST: Got result: {}", result);
         assert_eq!(result, 42);
     }
 
