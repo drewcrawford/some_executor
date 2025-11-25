@@ -342,18 +342,21 @@ mod tests {
 
     // === ISOLATION TESTS FOR DEBUGGING ===
 
-    /// Test 1: Does thread::spawn work at all?
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-    fn isolation_test_thread_spawn() {
+    /// Test 1: Does thread::spawn work at all? (async, no blocking)
+    #[test_executors::async_test]
+    async fn isolation_test_thread_spawn() {
         use std::sync::atomic::AtomicBool;
         let flag = Arc::new(AtomicBool::new(false));
         let flag_clone = flag.clone();
+        let (done_tx, done_rx) = r#continue::continuation::<()>();
 
-        let handle = crate::sys::thread::spawn(move || {
+        crate::sys::thread::spawn(move || {
             flag_clone.store(true, Ordering::SeqCst);
+            done_tx.send(());
         });
-        handle.join().expect("Thread should join");
+
+        // Await completion without blocking
+        done_rx.await;
         assert!(flag.load(Ordering::SeqCst), "Thread should have run");
     }
 
