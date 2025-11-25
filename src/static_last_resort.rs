@@ -424,7 +424,6 @@ mod tests {
     }
 
     /// Test 4: Does executor work inside a spawned thread?
-    #[cfg(not(target_arch = "wasm32"))]
     #[test_executors::async_test]
     async fn isolation_test_executor_in_thread() {
         #[cfg(target_arch = "wasm32")]
@@ -474,7 +473,7 @@ mod tests {
                 "WORKER: About to spawn_static",
             ));
 
-            //executor.spawn_static(task).detach();
+            executor.spawn_static(task).detach();
 
             #[cfg(target_arch = "wasm32")]
             web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(

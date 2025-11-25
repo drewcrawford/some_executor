@@ -1,9 +1,17 @@
 {
-  "goog:chromeOptions": {
-    "args": [
-      "--headless=new",
-      "--no-sandbox",
-      "--disable-dev-shm-usage"
-    ]
+  "capabilities": {
+    "alwaysMatch": {
+      "browserName": "chrome",
+      "goog:loggingPrefs": {
+        "browser": "ALL",
+        "driver": "ALL"
+      },
+      "goog:chromeOptions": {
+        "args": [
+          "--headless=new",
+          "--remote-debugging-port=9222"
+        ]
+      }
+    }
   }
 }
