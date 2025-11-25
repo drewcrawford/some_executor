@@ -416,14 +416,37 @@ mod tests {
         assert_eq!(counter.load(Ordering::Relaxed), 1);
     }
 
+    /// Test 4: Does executor work inside a spawned thread?
+    #[test_executors::async_test]
+    async fn isolation_test_executor_in_thread() {
+        let (done_tx, done_rx) = r#continue::continuation::<u32>();
+
+        crate::sys::thread::spawn(move || {
+            let mut executor = StaticLastResortExecutor::new();
+
+            let task = Task::without_notifications(
+                "simple-task".to_string(),
+                Configuration::default(),
+                async move {
+                    done_tx.send(42);
+                },
+            );
+
+            executor.spawn_static(task).detach();
+        });
+
+        let result = done_rx.await;
+        assert_eq!(result, 42);
+    }
+
     // === END ISOLATION TESTS ===
 
-    #[test_executors::async_test]
-    async fn test_basic_spawn_static() {
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_basic_spawn_static() {
+        let (s, r) = std::sync::mpsc::channel();
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
-        let counter_for_check = counter.clone();
-        let (done_tx, done_rx) = r#continue::continuation::<Result<(), &'static str>>();
 
         crate::sys::thread::spawn(move || {
             let mut executor = StaticLastResortExecutor::new();
@@ -447,24 +470,25 @@ mod tests {
                     match observer.await {
                         FinishedObservation::Ready(value) => {
                             assert_eq!(value, 42);
-                            done_tx.send(Ok(()));
+                            s.send(Ok(counter.load(Ordering::Relaxed))).unwrap();
                         }
                         _ => {
-                            done_tx.send(Err("Task did not complete successfully"));
+                            s.send(Err("Task did not complete successfully")).unwrap();
                         }
                     }
                 },
             );
             executor.spawn_static(observation_task).detach();
-        });
 
-        // Await completion without blocking
-        match done_rx.await {
-            Ok(()) => {
-                assert_eq!(counter_for_check.load(Ordering::Relaxed), 1);
+            // Block on receiver
+            match r.recv() {
+                Ok(Ok(counter_value)) => {
+                    assert_eq!(counter_value, 1);
+                }
+                Ok(Err(e)) => panic!("Task failed: {}", e),
+                Err(e) => panic!("Observation failed: {}", e),
             }
-            Err(e) => panic!("Task failed: {}", e),
-        }
+        });
     }
 
     #[cfg(not(target_arch = "wasm32"))]
