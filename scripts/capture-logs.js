@@ -1,36 +1,36 @@
 const CDP = require('chrome-remote-interface');
 
-async function attachToTarget(targetId) {
-  try {
-    const client = await CDP({port: 9222, target: targetId});
-    const {Log, Runtime} = client;
+async function setupLogging(client, label) {
+  const {Log, Runtime} = client;
 
-    await Log.enable();
-    await Runtime.enable();
+  await Log.enable();
+  await Runtime.enable();
 
-    Log.entryAdded((params) => {
-      const {entry} = params;
-      console.log(`[WORKER:LOG:${entry.level}] ${entry.text}`);
-    });
+  Log.entryAdded((params) => {
+    const {entry} = params;
+    console.log(`[${label}:LOG:${entry.level}] ${entry.text}`);
+  });
 
-    Runtime.consoleAPICalled((params) => {
-      const args = params.args.map(arg => arg.value || arg.description || '').join(' ');
-      console.log(`[WORKER:CONSOLE:${params.type}] ${args}`);
-    });
+  Runtime.consoleAPICalled((params) => {
+    const args = params.args.map(arg => arg.value || arg.description || '').join(' ');
+    console.log(`[${label}:CONSOLE:${params.type}] ${args}`);
+  });
 
-    console.error(`CDP: Attached to worker ${targetId}`);
-  } catch (err) {
-    console.error(`CDP: Failed to attach to worker ${targetId}: ${err.message}`);
-  }
+  // Also catch exceptions
+  Runtime.exceptionThrown((params) => {
+    console.log(`[${label}:EXCEPTION] ${JSON.stringify(params.exceptionDetails)}`);
+  });
+
+  console.error(`CDP: Logging enabled for ${label}`);
 }
 
 async function captureLogs() {
   // Retry connection forever - CI timeout will protect us
-  let client;
+  let browser;
   let attempt = 0;
-  while (!client) {
+  while (!browser) {
     try {
-      client = await CDP({port: 9222});
+      browser = await CDP({port: 9222});
     } catch (err) {
       attempt++;
       if (attempt % 10 === 0) {
@@ -40,43 +40,50 @@ async function captureLogs() {
     }
   }
 
-  const {Log, Runtime, Target} = client;
+  // Set up logging on browser-level connection too
+  await setupLogging(browser, 'browser');
 
-  // Enable logging on main page
-  await Log.enable();
-  await Runtime.enable();
+  const {Target} = browser;
 
-  Log.entryAdded((params) => {
-    const {entry} = params;
-    console.log(`[LOG:${entry.level}] ${entry.text}`);
-  });
-
-  Runtime.consoleAPICalled((params) => {
-    const args = params.args.map(arg => arg.value || arg.description || '').join(' ');
-    console.log(`[CONSOLE:${params.type}] ${args}`);
-  });
-
-  // Listen for new targets (workers)
+  // Discover all targets
   await Target.setDiscoverTargets({discover: true});
 
-  Target.targetCreated(async (params) => {
-    const {targetInfo} = params;
-    console.error(`CDP: New target: ${targetInfo.type} - ${targetInfo.targetId}`);
-    if (targetInfo.type === 'worker' || targetInfo.type === 'service_worker' || targetInfo.type === 'shared_worker') {
-      await attachToTarget(targetInfo.targetId);
+  // Attach to each page target we find
+  const attachToPage = async (targetId, targetType) => {
+    try {
+      // Create a new CDP session for this target
+      const {sessionId} = await Target.attachToTarget({targetId, flatten: true});
+      console.error(`CDP: Attached to ${targetType} ${targetId} (session: ${sessionId})`);
+
+      // Connect to this specific target
+      const client = await CDP({port: 9222, target: targetId});
+      await setupLogging(client, targetType);
+    } catch (err) {
+      console.error(`CDP: Failed to attach to ${targetId}: ${err.message}`);
+    }
+  };
+
+  // Listen for new targets
+  Target.targetCreated(async ({targetInfo}) => {
+    console.error(`CDP: New target: ${targetInfo.type} - ${targetInfo.url || targetInfo.targetId}`);
+    if (targetInfo.type === 'page' || targetInfo.type === 'worker' || targetInfo.type === 'iframe') {
+      await attachToPage(targetInfo.targetId, targetInfo.type);
     }
   });
 
-  // Also check existing targets
+  // Attach to existing targets
   const {targetInfos} = await Target.getTargets();
   for (const info of targetInfos) {
-    console.error(`CDP: Existing target: ${info.type} - ${info.targetId}`);
-    if (info.type === 'worker' || info.type === 'service_worker' || info.type === 'shared_worker') {
-      await attachToTarget(info.targetId);
+    console.error(`CDP: Existing target: ${info.type} - ${info.url || info.targetId}`);
+    if (info.type === 'page' || info.type === 'worker' || info.type === 'iframe') {
+      await attachToPage(info.targetId, info.type);
     }
   }
 
-  console.error('CDP: Connected and listening for logs (including workers)...');
+  console.error('CDP: Setup complete, listening for all targets...');
 }
 
-captureLogs();
+captureLogs().catch(err => {
+  console.error('CDP: Fatal error:', err);
+  process.exit(1);
+});
