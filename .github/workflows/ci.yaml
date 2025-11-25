@@ -104,6 +104,8 @@ jobs:
         run: |
           cargo install wasm-pack
           cargo clean
+          wasm-bindgen --version
+          wasm-bindgen-test-runner --version
           CHROMEDRIVER=`which chromedriver` RUSTDOCFLAGS="-D warnings" CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER='wasm-bindgen-test-runner' ./scripts/wasm-test-with-logs.sh --verbose --  rustup run nightly wasm-pack test --chrome --headless --lib -- --nocapture
       
 
