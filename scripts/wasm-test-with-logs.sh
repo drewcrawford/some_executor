@@ -9,21 +9,16 @@ if [ ! -d "node_modules/chrome-remote-interface" ]; then
 fi
 cd - > /dev/null
 
-# Start a background job to check what's listening on 9222
+# Start a background job to check ports periodically
 (
-    sleep 5
-    echo "=== Checking ports ==="
-    # Find chromedriver port
-    DRIVER_PORT=$(lsof -i -P | grep chromedri | grep LISTEN | head -1 | awk '{print $9}' | cut -d: -f2)
-    echo "Chromedriver port: $DRIVER_PORT"
-    if [ -n "$DRIVER_PORT" ]; then
-        echo "Querying chromedriver sessions..."
-        curl -s http://localhost:$DRIVER_PORT/sessions 2>/dev/null | head -5
-    fi
-    # Check what ports Chrome is using
-    echo "Chrome debug ports:"
-    lsof -i -P | grep "Google Chrome" | grep LISTEN || echo "  none"
-    echo "=== End port check ==="
+    for i in 5 10 20 30; do
+        sleep $i
+        echo "=== Port check at ${i}s ==="
+        echo "Port 9222:"
+        curl -s http://localhost:9222/json/version 2>/dev/null && echo "" || echo "  not responding"
+        echo "Processes with 'chrome' in name:"
+        ps aux 2>/dev/null | grep -i chrome | grep -v grep | head -5 || echo "  none found"
+    done
 ) &
 CHECK_PID=$!
 
