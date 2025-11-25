@@ -336,6 +336,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::task::{Context, Poll};
+    use std::time::Duration;
 
     #[cfg(target_arch = "wasm32")]
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
@@ -485,6 +486,9 @@ mod tests {
         let result = done_rx.await;
         log!("TEST: Got result: {}", result);
         assert_eq!(result, 42);
+        for i in 0..1_000000000 {
+            std::hint::black_box(i);
+        }
     }
 
     // === END ISOLATION TESTS ===
