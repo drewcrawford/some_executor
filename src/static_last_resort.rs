@@ -419,47 +419,31 @@ mod tests {
     /// Test 4: Does executor work inside a spawned thread?
     #[test_executors::async_test]
     async fn isolation_test_executor_in_thread() {
+        // Set up panic hook on wasm to capture any panics
+        #[cfg(target_arch = "wasm32")]
+        console_error_panic_hook::set_once();
+
         let (done_tx, done_rx) = r#continue::continuation::<u32>();
 
-        #[cfg(target_arch = "wasm32")]
-        web_sys::console::log_1(&"TEST: About to spawn thread".into());
-
         crate::sys::thread::spawn(move || {
+            // Also set panic hook in worker thread
             #[cfg(target_arch = "wasm32")]
-            web_sys::console::log_1(&"WORKER: Thread started".into());
+            console_error_panic_hook::set_once();
 
             let mut executor = StaticLastResortExecutor::new();
-
-            #[cfg(target_arch = "wasm32")]
-            web_sys::console::log_1(&"WORKER: Executor created".into());
 
             let task = Task::without_notifications(
                 "simple-task".to_string(),
                 Configuration::default(),
                 async move {
-                    #[cfg(target_arch = "wasm32")]
-                    web_sys::console::log_1(&"TASK: Running inside async task".into());
                     done_tx.send(42);
                 },
             );
 
-            #[cfg(target_arch = "wasm32")]
-            web_sys::console::log_1(&"WORKER: About to spawn_static".into());
-
             executor.spawn_static(task).detach();
-
-            #[cfg(target_arch = "wasm32")]
-            web_sys::console::log_1(&"WORKER: spawn_static returned, closure ending".into());
         });
 
-        #[cfg(target_arch = "wasm32")]
-        web_sys::console::log_1(&"TEST: Thread spawned, awaiting result".into());
-
         let result = done_rx.await;
-
-        #[cfg(target_arch = "wasm32")]
-        web_sys::console::log_1(&"TEST: Got result".into());
-
         assert_eq!(result, 42);
     }
 
