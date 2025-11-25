@@ -340,8 +340,83 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
+    // === ISOLATION TESTS FOR DEBUGGING ===
+
+    /// Test 1: Does thread::spawn work at all?
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn isolation_test_thread_spawn() {
+        use std::sync::atomic::AtomicBool;
+        let flag = Arc::new(AtomicBool::new(false));
+        let flag_clone = flag.clone();
+
+        let handle = crate::sys::thread::spawn(move || {
+            flag_clone.store(true, Ordering::SeqCst);
+        });
+        handle.join().expect("Thread should join");
+        assert!(flag.load(Ordering::SeqCst), "Thread should have run");
+    }
+
+    /// Test 2: Does mpsc channel work (same thread, no spawn)?
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn isolation_test_mpsc_same_thread() {
+        let (s, r) = std::sync::mpsc::channel();
+        s.send(42).unwrap();
+        assert_eq!(r.recv().unwrap(), 42);
+    }
+
+    /// Test 3: Does executor poll tasks (no threading)?
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn isolation_test_executor_no_thread() {
+        let mut executor = StaticLastResortExecutor::new();
+        let counter = Arc::new(AtomicU32::new(0));
+        let counter_clone = counter.clone();
+
+        let task = Task::without_notifications(
+            "simple-task".to_string(),
+            Configuration::default(),
+            async move {
+                counter_clone.fetch_add(1, Ordering::Relaxed);
+                42
+            },
+        );
+
+        let observer = executor.spawn_static(task);
+
+        // Poll until complete by awaiting in another task
+        let result_task = Task::without_notifications(
+            "result-task".to_string(),
+            Configuration::default(),
+            async move { observer.await },
+        );
+        let result_observer = executor.spawn_static(result_task);
+
+        // Spin until done (no blocking)
+        loop {
+            match result_observer.observe() {
+                crate::observer::Observation::Ready(finished) => match finished {
+                    FinishedObservation::Ready(_) => break,
+                    other => panic!("Unexpected: {:?}", other),
+                },
+                crate::observer::Observation::Pending => {
+                    // Keep spinning
+                    std::hint::spin_loop();
+                }
+                crate::observer::Observation::Done | crate::observer::Observation::Cancelled => {
+                    panic!("Task was done or cancelled unexpectedly");
+                }
+            }
+        }
+
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
+    }
+
+    // === END ISOLATION TESTS ===
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn test_basic_spawn_static() {
         let (s, r) = std::sync::mpsc::channel();
         let counter = Arc::new(AtomicU32::new(0));
@@ -390,8 +465,8 @@ mod tests {
         });
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn test_static_future() {
         let (s, r) = std::sync::mpsc::channel();
 
@@ -439,8 +514,8 @@ mod tests {
         });
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn test_spawn_static_async() {
         let (s, r) = std::sync::mpsc::channel();
         let counter = Arc::new(AtomicU32::new(0));
