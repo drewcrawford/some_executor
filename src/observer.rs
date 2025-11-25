@@ -657,7 +657,7 @@ impl<T> From<Observation<T>> for Option<T> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use crate::observer::{ExecutorNotified, TypedObserver};
 
