@@ -1,24 +1,19 @@
 const CDP = require('chrome-remote-interface');
 
 async function captureLogs() {
-  // Retry connection until Chrome is ready
-  // 120 retries × 1000ms = 2 minutes max wait (cargo build can take 30+ seconds)
+  // Retry connection forever - CI timeout will protect us
   let client;
-  for (let i = 0; i < 120; i++) {
+  let attempt = 0;
+  while (!client) {
     try {
       client = await CDP({port: 9222});
-      break;
     } catch (err) {
-      if (i % 10 === 0) {
-        console.error(`CDP: Waiting for Chrome (attempt ${i + 1}/120)...`);
+      attempt++;
+      if (attempt % 10 === 0) {
+        console.error(`CDP: Waiting for Chrome (attempt ${attempt})...`);
       }
       await new Promise(r => setTimeout(r, 1000));
     }
-  }
-
-  if (!client) {
-    console.error('Failed to connect to Chrome on port 9222');
-    process.exit(1);
   }
 
   const {Log, Runtime} = client;
