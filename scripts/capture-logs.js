@@ -1,10 +1,14 @@
 const CDP = require('chrome-remote-interface');
 
 async function setupLogging(client, label) {
-  const {Log, Runtime} = client;
+  const {Log, Runtime, Network, Page} = client;
 
   await Log.enable();
   await Runtime.enable();
+
+  // Try to enable Network and Page (may not be available on all targets)
+  try { await Network.enable(); } catch (e) { /* ignore */ }
+  try { await Page.enable(); } catch (e) { /* ignore */ }
 
   Log.entryAdded((params) => {
     const {entry} = params;
@@ -16,9 +20,29 @@ async function setupLogging(client, label) {
     console.log(`[${label}:CONSOLE:${params.type}] ${args}`);
   });
 
-  // Also catch exceptions
+  // Catch exceptions
   Runtime.exceptionThrown((params) => {
-    console.log(`[${label}:EXCEPTION] ${JSON.stringify(params.exceptionDetails)}`);
+    const details = params.exceptionDetails;
+    const text = details.exception?.description || details.text || JSON.stringify(details);
+    console.log(`[${label}:EXCEPTION] ${text}`);
+  });
+
+  // Network failures
+  Network.requestFailed && Network.requestFailed((params) => {
+    console.log(`[${label}:NET:FAILED] ${params.request?.url} - ${params.errorText}`);
+  });
+
+  // Network responses (for 4xx/5xx)
+  Network.responseReceived && Network.responseReceived((params) => {
+    const {response} = params;
+    if (response.status >= 400) {
+      console.log(`[${label}:NET:${response.status}] ${response.url}`);
+    }
+  });
+
+  // Page crashes
+  Page.javascriptDialogOpening && Page.javascriptDialogOpening((params) => {
+    console.log(`[${label}:DIALOG] ${params.type}: ${params.message}`);
   });
 
   console.error(`CDP: Logging enabled for ${label}`);
