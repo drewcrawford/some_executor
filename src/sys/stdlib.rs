@@ -280,8 +280,8 @@ mod tests {
             crate::observer::Observation::Ready(value) => {
                 assert_eq!(value, 99);
                 // Verify it was polled at least 3 times and the counter was decremented
-                // Since we start at 3 and decrement each poll, final value should be <= 0
-                assert!(polls_counter.load(Ordering::Relaxed) <= 0);
+                // Since we start at 3 and decrement each poll, final value should be 0
+                assert_eq!(polls_counter.load(Ordering::Relaxed), 0);
             }
             _ => panic!("Task should have completed successfully"),
         }

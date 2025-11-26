@@ -666,7 +666,7 @@ mod tests {
     fn test_send() {
         /* observer can send when the underlying value can */
         #[allow(unused)]
-        fn ex<'executor, T: Send, E: ExecutorNotified + Send>(_observer: TypedObserver<T, E>) {
+        fn ex<T: Send, E: ExecutorNotified + Send>(_observer: TypedObserver<T, E>) {
             fn assert_send<T: Send>() {}
             assert_send::<TypedObserver<T, E>>();
         }
@@ -676,7 +676,7 @@ mod tests {
     fn test_unpin() {
         /* observer can unpin */
         #[allow(unused)]
-        fn ex<'executor, T, E: ExecutorNotified + Unpin>(_observer: TypedObserver<T, E>) {
+        fn ex<T, E: ExecutorNotified + Unpin>(_observer: TypedObserver<T, E>) {
             fn assert_unpin<T: Unpin>() {}
             assert_unpin::<TypedObserver<T, E>>();
         }

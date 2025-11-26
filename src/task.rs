@@ -607,10 +607,11 @@ mod tests {
         }
 
         #[allow(unused)]
-        fn spawn_check<F: Future + Send, E: SomeExecutor>(task: Task<F, Infallible>, exec: &mut E)
-        where
+        fn spawn_check<F: Future + Send, E: SomeExecutor + Send>(
+            task: Task<F, Infallible>,
+            exec: &mut E,
+        ) where
             F::Output: Send,
-            E: Send,
         {
             let spawned: SpawnedTask<F, Infallible, E> = task.spawn(exec).0;
             fn assert_send<T: Send>(_: T) {}
@@ -631,12 +632,10 @@ mod tests {
         }
 
         #[allow(unused)]
-        fn spawn_check_unpin<F: Future + Unpin, E: SomeExecutor>(
+        fn spawn_check_unpin<F: Future + Unpin, E: SomeExecutor + Unpin>(
             task: Task<F, Infallible>,
             exec: &mut E,
-        ) where
-            E: Unpin,
-        {
+        ) {
             let spawned: SpawnedTask<F, Infallible, E> = task.spawn(exec).0;
             fn assert_unpin<T: Unpin>(_: T) {}
             assert_unpin(spawned);
@@ -665,13 +664,12 @@ mod tests {
         {
             type ExecutorNotifier = Infallible;
 
-            fn spawn_local<F: Future, Notifier: ObserverNotified<F::Output>>(
+            fn spawn_local<F: Future + 'new_task, Notifier: ObserverNotified<F::Output>>(
                 &mut self,
                 task: Task<F, Notifier>,
             ) -> impl Observer<Value = F::Output>
             where
                 Self: Sized,
-                F: 'new_task,
                 F::Output: 'static,
                 /* I am a little uncertain whether this is really required */
                 <F as Future>::Output: Unpin,
@@ -682,21 +680,21 @@ mod tests {
                 observer
             }
 
-            fn spawn_local_async<F: Future, Notifier: ObserverNotified<F::Output>>(
+            async fn spawn_local_async<
+                F: Future + 'new_task,
+                Notifier: ObserverNotified<F::Output>,
+            >(
                 &mut self,
                 task: Task<F, Notifier>,
-            ) -> impl Future<Output = impl Observer<Value = F::Output>>
+            ) -> impl Observer<Value = F::Output>
             where
                 Self: Sized,
-                F: 'new_task,
                 F::Output: 'static,
             {
-                async {
-                    let (spawn, observer) = task.spawn_local(self);
-                    let pinned_spawn = Box::pin(spawn);
-                    self.0.push(pinned_spawn);
-                    observer
-                }
+                let (spawn, observer) = task.spawn_local(self);
+                let pinned_spawn = Box::pin(spawn);
+                self.0.push(pinned_spawn);
+                observer
             }
 
             fn spawn_local_objsafe(
@@ -729,18 +727,12 @@ mod tests {
                         >,
                     > + 's,
             > {
-                Box::new(async {
-                    let (spawn, observer) = task.spawn_local_objsafe(self);
-                    let pinned_spawn = Box::pin(spawn);
-                    self.0.push(pinned_spawn);
-                    Box::new(observer)
-                        as Box<
-                            dyn Observer<
-                                    Value = Box<dyn Any>,
-                                    Output = FinishedObservation<Box<dyn Any>>,
-                                >,
-                        >
-                })
+                let (spawn, observer) = task.spawn_local_objsafe(self);
+                let pinned_spawn = Box::pin(spawn);
+                self.0.push(pinned_spawn);
+                #[allow(clippy::type_complexity)]
+                let boxed = Box::new(observer) as Box<dyn Observer<Value = _, Output = _>>;
+                Box::new(std::future::ready(boxed))
             }
 
             fn executor_notifier(&mut self) -> Option<Self::ExecutorNotifier> {
