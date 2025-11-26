@@ -20,6 +20,8 @@ Or, you can spawn a task onto a global executor via dynamic dispatch.  You can p
 can be used by the executor to prioritize tasks. You can do all this in a modular and futureproof way.
 
 Oh, and we built an executor into the crate.  It's not the greatest, but it is a baseline that's always available.
+These builtin executors print warnings when used to alert you they're not production-quality. If you want them to panic instead
+(useful for catching missing executor configuration during development), set the environment variable `SOME_EXECUTOR_BUILTIN_SHOULD_PANIC=1`.
 
 **If you want to implement an executor**, this crate provides a simple, obvious trait to receive futures
 and execute them, and plug into the ecosystem.  Moreover, advanced features like cancellation are
@@ -116,6 +118,13 @@ mod sys;
 pub mod task;
 pub mod thread_executor;
 
+/// Platform-appropriate instant type for time measurements.
+///
+/// This is a re-export of either `std::time::Instant` (on native platforms) or
+/// `web_time::Instant` (on wasm32), providing a unified interface for time-related
+/// operations across all supported platforms.
+///
+/// Use this type for task scheduling and timing operations within the executor framework.
 pub use sys::Instant;
 
 /// Task priority for scheduling hints.
